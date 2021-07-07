@@ -122,6 +122,12 @@ func init() {
 	flag.StringVar(&config.MySQLBindHost, "mysql_bind_host", "localhost",
 		"which host to bind vtgate mysql listener to")
 
+	flag.StringVar(&config.MySQLSocket, "mysql_socket", "/var/run/mysqld/mysql.sock",
+		"The socket file to use for the MySQL connection.")
+
+	flag.StringVar(&config.MySQLPidFile, "mysql_pid_file", "/var/run/mysqld/mysql.pid",
+		"The PID file for the MySQL daemon.")
+
 	flag.StringVar(&mycnf, "extra_my_cnf", "",
 		"extra files to add to the config, separated by ':'")
 
