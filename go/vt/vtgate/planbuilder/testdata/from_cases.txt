@@ -1636,6 +1636,25 @@ Gen4 plan same as above
     "Vindex": "user_index"
   }
 }
+{
+  "QueryType": "SELECT",
+  "Original": "select ref.col from ref join (select aa from user where user.id=1) user",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "SelectEqualUnique",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select ref.col from ref, (select aa from `user` where 1 != 1) as `user` where 1 != 1",
+    "Query": "select ref.col from ref, (select aa from `user` where `user`.id = 1) as `user`",
+    "Table": "`user`, ref",
+    "Values": [
+      1
+    ],
+    "Vindex": "user_index"
+  }
+}
 
 # routing rules for join, unsharded route wins if we can't find a merged route
 "select route2.col from route2 join user_extra"
