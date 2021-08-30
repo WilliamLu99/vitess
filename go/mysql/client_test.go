@@ -188,6 +188,7 @@ func TestTLSClientDisabled(t *testing.T) {
 		path.Join(root, "server-key.pem"),
 		"",
 		"",
+		"",
 		tls.VersionTLS12)
 	require.NoError(t, err)
 	l.TLSConfig.Store(serverConfig)
@@ -259,6 +260,7 @@ func TestTLSClientPreferredDefault(t *testing.T) {
 	serverConfig, err := vttls.ServerConfig(
 		path.Join(root, "server-cert.pem"),
 		path.Join(root, "server-key.pem"),
+		"",
 		"",
 		"",
 		tls.VersionTLS12)
@@ -382,6 +384,7 @@ func TestTLSClientVerifyCA(t *testing.T) {
 		path.Join(root, "server-key.pem"),
 		"",
 		"",
+		"",
 		tls.VersionTLS12)
 	require.NoError(t, err)
 	l.TLSConfig.Store(serverConfig)
@@ -466,6 +469,7 @@ func TestTLSClientVerifyIdentity(t *testing.T) {
 		path.Join(root, "server-key.pem"),
 		"",
 		"",
+		"",
 		tls.VersionTLS12)
 	require.NoError(t, err)
 	l.TLSConfig.Store(serverConfig)
@@ -512,4 +516,12 @@ func TestTLSClientVerifyIdentity(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
+
+	// Now revoke the server certificate and make sure we can't connect
+	tlstest.RevokeCertAndRegenerateCRL(root, tlstest.CA, "server")
+
+	params.SslCrl = path.Join(root, "ca-crl.pem")
+	_, err = Connect(context.Background(), params)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Certificate revoked: CommonName=server.example.com")
 }
