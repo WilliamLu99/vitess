@@ -42,6 +42,167 @@ func TestClientServerWithCombineCerts(t *testing.T) {
 	testClientServer(t, true)
 }
 
+func TestClientServerWithRevokedServerCert(t *testing.T) {
+	// Our test root.
+	root, err := ioutil.TempDir("", "tlstest")
+	if err != nil {
+		t.Fatalf("TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(root)
+
+	clientServerKeyPairs := CreateClientServerCertPairs(root)
+
+	serverConfig, err := vttls.ServerConfig(
+		clientServerKeyPairs.RevokedServerCert,
+		clientServerKeyPairs.RevokedServerKey,
+		clientServerKeyPairs.ClientCA,
+		clientServerKeyPairs.ClientCRL,
+		"",
+		tls.VersionTLS12)
+	if err != nil {
+		t.Fatalf("TLSServerConfig failed: %v", err)
+	}
+
+	clientConfig, err := vttls.ClientConfig(
+		vttls.VerifyIdentity,
+		clientServerKeyPairs.ClientCert,
+		clientServerKeyPairs.ClientKey,
+		clientServerKeyPairs.ServerCA,
+		clientServerKeyPairs.ServerCRL,
+		clientServerKeyPairs.RevokedServerName,
+		tls.VersionTLS12)
+	if err != nil {
+		t.Fatalf("TLSClientConfig failed: %v", err)
+	}
+
+	// Create a TLS server listener.
+	listener, err := tls.Listen("tcp", ":0", serverConfig)
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	addr := listener.Addr().String()
+	defer listener.Close()
+	// create a dialer with timeout
+	dialer := new(net.Dialer)
+	dialer.Timeout = 10 * time.Second
+
+	wg := sync.WaitGroup{}
+
+	var clientErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var clientConn *tls.Conn
+		clientConn, clientErr = tls.DialWithDialer(dialer, "tcp", addr, clientConfig)
+		if clientErr == nil {
+			// we don't expect to reach this
+			clientConn.Write([]byte{42})
+			clientConn.Close()
+		}
+	}()
+
+	serverConn, err := listener.Accept()
+	// We expect the server to accept the client certificate
+	if err != nil {
+		t.Fatalf("Accept failed: %v", err)
+	}
+
+	// The client should have closed the connection and sent an error
+	result := make([]byte, 1)
+	if n, err := serverConn.Read(result); err == nil {
+		t.Fatalf("Read should have failed but it did not: %v - %v", n, result)
+	}
+	serverConn.Close()
+	wg.Wait()
+
+	if clientErr == nil {
+		t.Fatalf("Client should not accept server certificate, but it did")
+	} else {
+		if clientErr.Error() != fmt.Sprintf("Certificate revoked: CommonName=%s", clientServerKeyPairs.RevokedServerName) {
+			t.Errorf("Wrong error returned to client: %v", clientErr)
+		}
+	}
+}
+
+func TestClientServerWithRevokedClientCert(t *testing.T) {
+	// Our test root.
+	root, err := ioutil.TempDir("", "tlstest")
+	if err != nil {
+		t.Fatalf("TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(root)
+
+	clientServerKeyPairs := CreateClientServerCertPairs(root)
+
+	serverConfig, err := vttls.ServerConfig(
+		clientServerKeyPairs.ServerCert,
+		clientServerKeyPairs.ServerKey,
+		clientServerKeyPairs.ClientCA,
+		clientServerKeyPairs.ClientCRL,
+		"",
+		tls.VersionTLS12)
+	if err != nil {
+		t.Fatalf("TLSServerConfig failed: %v", err)
+	}
+
+	clientConfig, err := vttls.ClientConfig(
+		vttls.VerifyIdentity,
+		clientServerKeyPairs.RevokedClientCert,
+		clientServerKeyPairs.RevokedClientKey,
+		clientServerKeyPairs.ServerCA,
+		clientServerKeyPairs.ServerCRL,
+		clientServerKeyPairs.ServerName,
+		tls.VersionTLS12)
+	if err != nil {
+		t.Fatalf("TLSClientConfig failed: %v", err)
+	}
+
+	// Create a TLS server listener.
+	listener, err := tls.Listen("tcp", ":0", serverConfig)
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	addr := listener.Addr().String()
+	defer listener.Close()
+	// create a dialer with timeout
+	dialer := new(net.Dialer)
+	dialer.Timeout = 10 * time.Second
+
+	wg := sync.WaitGroup{}
+
+	var clientErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var clientConn *tls.Conn
+		clientConn, clientErr = tls.DialWithDialer(dialer, "tcp", addr, clientConfig)
+		if clientErr == nil {
+			clientConn.Write([]byte{42})
+			clientConn.Close()
+		}
+	}()
+
+	serverConn, err := listener.Accept()
+	if err != nil {
+		t.Fatalf("Accept failed: %v", err)
+	}
+
+	err = serverConn.(*tls.Conn).Handshake()
+	if err != nil {
+		if err.Error() != fmt.Sprintf("Certificate revoked: CommonName=%s", clientServerKeyPairs.RevokedClientName) {
+			t.Fatalf("Wrong error returned: %v", err)
+		}
+	} else {
+		t.Fatal("Server should have failed the TLS handshake but it did not")
+	}
+	serverConn.Close()
+	wg.Wait()
+
+	if clientErr != nil {
+		t.Fatalf("Client should have accepted server certificate, but it did not")
+	}
+}
+
 // testClientServer generates:
 // - a root CA
 // - a server intermediate CA, with a server.
@@ -66,6 +227,7 @@ func testClientServer(t *testing.T, combineCerts bool) {
 		clientServerKeyPairs.ServerCert,
 		clientServerKeyPairs.ServerKey,
 		clientServerKeyPairs.ClientCA,
+		clientServerKeyPairs.ClientCRL,
 		serverCA,
 		tls.VersionTLS12)
 	if err != nil {
@@ -76,6 +238,7 @@ func testClientServer(t *testing.T, combineCerts bool) {
 		clientServerKeyPairs.ClientCert,
 		clientServerKeyPairs.ClientKey,
 		clientServerKeyPairs.ServerCA,
+		clientServerKeyPairs.ServerCRL,
 		clientServerKeyPairs.ServerName,
 		tls.VersionTLS12)
 	if err != nil {
@@ -138,6 +301,7 @@ func testClientServer(t *testing.T, combineCerts bool) {
 		clientServerKeyPairs.ServerCert,
 		clientServerKeyPairs.ServerKey,
 		clientServerKeyPairs.ServerCA,
+		clientServerKeyPairs.ServerCRL,
 		clientServerKeyPairs.ServerName,
 		tls.VersionTLS12)
 	if err != nil {
@@ -189,6 +353,7 @@ func getServerConfigWithoutCombinedCerts(keypairs ClientServerKeyPairs) (*tls.Co
 		keypairs.ServerCert,
 		keypairs.ServerKey,
 		keypairs.ClientCA,
+		"", // CRL
 		"",
 		tls.VersionTLS12)
 }
@@ -198,6 +363,7 @@ func getServerConfigWithCombinedCerts(keypairs ClientServerKeyPairs) (*tls.Confi
 		keypairs.ServerCert,
 		keypairs.ServerKey,
 		keypairs.ClientCA,
+		"", // CRL
 		keypairs.ServerCA,
 		tls.VersionTLS12)
 }
@@ -208,6 +374,7 @@ func getClientConfig(keypairs ClientServerKeyPairs) (*tls.Config, error) {
 		keypairs.ClientCert,
 		keypairs.ClientKey,
 		keypairs.ServerCA,
+		"", // CRL
 		keypairs.ServerName,
 		tls.VersionTLS12)
 }
@@ -297,6 +464,7 @@ func testNumberOfCertsWithOrWithoutCombining(t *testing.T, numCertsExpected int,
 		clientServerKeyPairs.ServerCert,
 		clientServerKeyPairs.ServerKey,
 		clientServerKeyPairs.ClientCA,
+		"", // CRL
 		serverCA,
 		tls.VersionTLS12)
 

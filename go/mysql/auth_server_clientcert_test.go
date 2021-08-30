@@ -61,6 +61,7 @@ func TestValidCert(t *testing.T) {
 		path.Join(root, "server-cert.pem"),
 		path.Join(root, "server-key.pem"),
 		path.Join(root, "ca-cert.pem"),
+		path.Join(root, "crl.pem"),
 		"",
 		tls.VersionTLS12)
 	if err != nil {
@@ -143,6 +144,7 @@ func TestNoCert(t *testing.T) {
 		path.Join(root, "server-cert.pem"),
 		path.Join(root, "server-key.pem"),
 		path.Join(root, "ca-cert.pem"),
+		path.Join(root, "crl.pem"),
 		"",
 		tls.VersionTLS12)
 	if err != nil {

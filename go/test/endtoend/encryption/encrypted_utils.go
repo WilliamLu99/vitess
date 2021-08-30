@@ -21,6 +21,8 @@ package encryption
 import (
 	"os"
 	"os/exec"
+
+	"vitess.io/vitess/go/vt/log"
 )
 
 // CreateDirectory will create directory with dirName
@@ -37,5 +39,7 @@ func ExecuteVttlstestCommand(args ...string) error {
 		"vttlstest",
 		args...,
 	)
-	return tmpProcess.Run()
+	output, err := tmpProcess.CombinedOutput()
+	log.Error(string(output))
+	return err
 }

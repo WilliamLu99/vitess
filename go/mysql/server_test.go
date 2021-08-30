@@ -834,6 +834,7 @@ func TestTLSServer(t *testing.T) {
 		path.Join(root, "server-key.pem"),
 		path.Join(root, "ca-cert.pem"),
 		"",
+		"",
 		tls.VersionTLS12)
 	require.NoError(t, err)
 	l.TLSConfig.Store(serverConfig)
@@ -932,6 +933,7 @@ func TestTLSRequired(t *testing.T) {
 		path.Join(root, "server-key.pem"),
 		path.Join(root, "ca-cert.pem"),
 		"",
+		"",
 		tls.VersionTLS12)
 	require.NoError(t, err)
 	l.TLSConfig.Store(serverConfig)
@@ -1013,6 +1015,7 @@ func TestCachingSha2PasswordAuthWithTLS(t *testing.T) {
 		path.Join(root, "server-cert.pem"),
 		path.Join(root, "server-key.pem"),
 		path.Join(root, "ca-cert.pem"),
+		"",
 		"",
 		tls.VersionTLS12)
 	if err != nil {

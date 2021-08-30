@@ -99,7 +99,11 @@ func (vtctl *VtctlProcess) ExecuteCommand(args ...string) (err error) {
 		args...,
 	)
 	log.Info(fmt.Sprintf("Executing vtctlclient with arguments %v", strings.Join(tmpProcess.Args, " ")))
-	return tmpProcess.Run()
+	output, err := tmpProcess.CombinedOutput()
+	if err != nil {
+		log.Error(string(output))
+	}
+	return err
 }
 
 // VtctlProcessInstance returns a VtctlProcess handle for vtctl process

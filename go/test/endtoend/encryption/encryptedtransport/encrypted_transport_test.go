@@ -96,6 +96,7 @@ var (
 	grpcCert      = ""
 	grpcKey       = ""
 	grpcCa        = ""
+	grpcCrl       = ""
 	grpcName      = ""
 )
 
@@ -169,7 +170,7 @@ func TestSecureTransport(t *testing.T) {
 	grpcAddress := fmt.Sprintf("%s:%d", "localhost", clusterInstance.VtgateProcess.GrpcPort)
 
 	// 'vtgate client 1' is authorized to access vt_insert_test
-	setCreds(t, "vtgate-client-1", "vtgate-server")
+	setCreds(t, "vtgate-revoked-client-3", "vtgate-server")
 	ctx := context.Background()
 	request := getRequest("select * from vt_insert_test")
 	vc, err := getVitessClient(grpcAddress)
@@ -252,7 +253,7 @@ func clusterSetUp(t *testing.T) (int, error) {
 	}
 
 	// create all certs
-	log.Info("Creating certificates")
+	log.Error("Creating certificates")
 	certDirectory = path.Join(clusterInstance.TmpDirectory, "certs")
 	_ = encryption.CreateDirectory(certDirectory, 0700)
 
@@ -262,13 +263,25 @@ func clusterSetUp(t *testing.T) (int, error) {
 	err = createSignedCert("ca", "01", "vttablet-server", "vttablet server CA")
 	require.NoError(t, err)
 
+	err = createCrl("vttablet-server")
+	require.NoError(t, err)
+
 	err = createSignedCert("ca", "02", "vttablet-client", "vttablet client CA")
+	require.NoError(t, err)
+
+	err = createCrl("vttablet-server")
 	require.NoError(t, err)
 
 	err = createSignedCert("ca", "03", "vtgate-server", "vtgate server CA")
 	require.NoError(t, err)
 
+	err = createCrl("vtgate-server")
+	require.NoError(t, err)
+
 	err = createSignedCert("ca", "04", "vtgate-client", "vtgate client CA")
+	require.NoError(t, err)
+
+	err = createCrl("vtgate-client")
 	require.NoError(t, err)
 
 	err = createSignedCert("vttablet-server", "01", "vttablet-server-instance", "vttablet server instance")
@@ -284,6 +297,12 @@ func clusterSetUp(t *testing.T) (int, error) {
 	require.NoError(t, err)
 
 	err = createSignedCert("vtgate-client", "02", "vtgate-client-2", "vtgate client 2")
+	require.NoError(t, err)
+
+	err = createSignedCert("vtgate-client", "03", "vtgate-revoked-client-3", "vtgate revoked client 3")
+	require.NoError(t, err)
+
+	err = revokeCert("vtgate-client", "vtgate-revoked-client-3")
 	require.NoError(t, err)
 
 	for _, keyspaceStr := range []string{keyspace} {
@@ -337,21 +356,37 @@ func clusterSetUp(t *testing.T) (int, error) {
 
 func createSignedCert(ca string, serial string, name string, commonName string) error {
 	log.Infof("Creating signed cert and key %s", commonName)
-	tmpProcess := exec.Command(
-		"vttlstest",
+	return encryption.ExecuteVttlstestCommand(
 		"-root", certDirectory,
 		"CreateSignedCert",
 		"-parent", ca,
 		"-serial", serial,
 		"-common_name", commonName,
 		name)
-	return tmpProcess.Run()
+}
+
+func createCrl(ca string) error {
+	log.Infof("Creating CRL for the ca %s", ca)
+	return encryption.ExecuteVttlstestCommand(
+		"-root", certDirectory,
+		"CreateCRL",
+		ca)
+}
+
+func revokeCert(ca string, name string) error {
+	log.Infof("Revoking signed cert %s", name)
+	return encryption.ExecuteVttlstestCommand(
+		"-root", certDirectory,
+		"RevokeCert",
+		"-ca", ca,
+		name)
 }
 
 func serverExtraArguments(name string, ca string) []string {
 	args := []string{"-grpc_cert", certDirectory + "/" + name + "-cert.pem",
 		"-grpc_key", certDirectory + "/" + name + "-key.pem",
-		"-grpc_ca", certDirectory + "/" + ca + "-cert.pem"}
+		"-grpc_ca", certDirectory + "/" + ca + "-cert.pem",
+		"-grpc_crl", certDirectory + "/" + ca + "-crl.pem"}
 	return args
 }
 
@@ -360,6 +395,7 @@ func tmclientExtraArgs(name string) []string {
 	var args = []string{"-tablet_manager_grpc_cert", certDirectory + "/" + name + "-cert.pem",
 		"-tablet_manager_grpc_key", certDirectory + "/" + name + "-key.pem",
 		"-tablet_manager_grpc_ca", certDirectory + "/" + ca + "-cert.pem",
+		"-tablet_manager_grpc_crl", certDirectory + "/" + ca + "-crl.pem",
 		"-tablet_manager_grpc_server_name", "vttablet server instance"}
 	return args
 }
@@ -369,12 +405,13 @@ func tabletConnExtraArgs(name string) []string {
 	args := []string{"-tablet_grpc_cert", certDirectory + "/" + name + "-cert.pem",
 		"-tablet_grpc_key", certDirectory + "/" + name + "-key.pem",
 		"-tablet_grpc_ca", certDirectory + "/" + ca + "-cert.pem",
+		"-tablet_grpc_crl", certDirectory + "/" + ca + "-crl.pem",
 		"-tablet_grpc_server_name", "vttablet server instance"}
 	return args
 }
 
 func getVitessClient(addr string) (vtgateservicepb.VitessClient, error) {
-	opt, err := grpcclient.SecureDialOption(grpcCert, grpcKey, grpcCa, grpcName)
+	opt, err := grpcclient.SecureDialOption(grpcCert, grpcKey, grpcCa, grpcCrl, grpcName)
 	if err != nil {
 		return nil, err
 	}
@@ -419,6 +456,7 @@ func setCreds(t *testing.T, name string, ca string) {
 
 func setSSLInfoEmpty() {
 	grpcCa = ""
+	grpcCrl = ""
 	grpcCert = ""
 	grpcKey = ""
 	grpcName = ""
