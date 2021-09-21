@@ -17,6 +17,7 @@ limitations under the License.
 package vttls
 
 import (
+	"bytes"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
@@ -42,24 +43,48 @@ func certIsRevoked(cert *x509.Certificate, crl *pkix.CertificateList) bool {
 }
 
 func verifyPeerCertificateAgainstCRL(crl string) (verifyPeerCertificateFunc, error) {
-	body, err := ioutil.ReadFile(crl)
-	if err != nil {
-		return nil, err
-	}
-
-	parsedCRL, err := x509.ParseCRL(body)
+	crlSet, err := loadCRLSet(crl)
 	if err != nil {
 		return nil, err
 	}
 
 	return func(_ [][]byte, verifiedChains [][]*x509.Certificate) error {
 		for _, chain := range verifiedChains {
-			for _, cert := range chain {
-				if certIsRevoked(cert, parsedCRL) {
-					return fmt.Errorf("Certificate revoked: CommonName=%v", cert.Subject.CommonName)
+			for i := 0; i < len(chain)-1; i++ {
+				cert := chain[i]
+				issuerCert := chain[i+1]
+
+				for _, crl := range crlSet {
+					if issuerCert.CheckCRLSignature(crl) == nil {
+						if certIsRevoked(cert, crl) {
+							return fmt.Errorf("Certificate revoked: CommonName=%v", cert.Subject.CommonName)
+						}
+					}
 				}
 			}
 		}
 		return nil
 	}, nil
+}
+
+func loadCRLSet(crl string) ([]*pkix.CertificateList, error) {
+	body, err := ioutil.ReadFile(crl)
+	if err != nil {
+		return nil, err
+	}
+
+	crlSet := make([]*pkix.CertificateList, 0)
+	pemCRLHeader := []byte("-----BEGIN X509 CRL-----")
+	pemCRLs := bytes.SplitAfter(body, pemCRLHeader)
+	for i := 0; i < len(pemCRLs); i += 2 {
+		pemBytes := append(pemCRLs[i], pemCRLs[i+1]...)
+		parsedCRL, err := x509.ParseCRL(pemBytes)
+		if err != nil {
+			return nil, err
+		}
+
+		crlSet = append(crlSet, parsedCRL)
+	}
+
+	return crlSet, nil
 }
