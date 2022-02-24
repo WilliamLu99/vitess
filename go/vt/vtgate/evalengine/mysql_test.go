@@ -18,28 +18,66 @@ package evalengine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"vitess.io/vitess/go/mysql/collations"
+	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/sqlparser"
 )
 
-func testSingle(t *testing.T, query string) (EvalResult, error) {
+func knownBadQuery(expr Expr) bool {
+	isNullSafeComparison := func(expr Expr) bool {
+		if cmp, ok := expr.(*ComparisonExpr); ok {
+			return cmp.Op.String() == "<=>"
+		}
+		return false
+	}
+
+	if isNullSafeComparison(expr) {
+		cmp := expr.(*ComparisonExpr)
+		return isNullSafeComparison(cmp.Left) || isNullSafeComparison(cmp.Right)
+	}
+	return false
+}
+
+var errKnownBadQuery = errors.New("this query is known to give bad results in MySQL")
+
+func convert(t *testing.T, query string, simplify bool) (Expr, error) {
 	stmt, err := sqlparser.Parse(query)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	astExpr := stmt.(*sqlparser.Select).SelectExprs[0].(*sqlparser.AliasedExpr).Expr
-	converted, err := ConvertEx(astExpr, dummyCollation(45), false)
+	converted, err := TranslateEx(astExpr, LookupDefaultCollation(collations.CollationUtf8mb4ID), simplify)
 	if err == nil {
-		// t.Logf("%s", PrettyPrint(converted))
-		return noenv.Evaluate(converted)
+		if knownBadQuery(converted) {
+			return nil, errKnownBadQuery
+		}
+		return converted, nil
+	}
+	return nil, err
+}
+
+func testSingle(t *testing.T, query string) (EvalResult, error) {
+	converted, err := convert(t, query, true)
+	if err == nil {
+		return EnvWithBindVars(nil, collations.CollationUtf8mb4ID).Evaluate(converted)
 	}
 	return EvalResult{}, err
+}
+
+func testSingleType(t *testing.T, query string) (sqltypes.Type, error) {
+	converted, err := convert(t, query, false)
+	if err == nil {
+		return EnvWithBindVars(nil, collations.CollationUtf8mb4ID).TypeOf(converted)
+	}
+	return 0, err
 }
 
 func TestMySQLGolden(t *testing.T) {
@@ -66,6 +104,10 @@ func TestMySQLGolden(t *testing.T) {
 			for _, tc := range testcases {
 				debug := fmt.Sprintf("\n// Debug\neval, err := testSingle(t, `%s`)\nt.Logf(\"eval=%%s err=%%v\", eval.Value(), err) // want value=%q\n", tc.Query, tc.Value)
 				eval, err := testSingle(t, tc.Query)
+				if err == errKnownBadQuery {
+					ok++
+					continue
+				}
 				if err != nil {
 					if tc.Error == "" {
 						t.Errorf("query: %s\nmysql val: %s\nvitess err: %s\n%s", tc.Query, tc.Value, err.Error(), debug)
@@ -94,6 +136,6 @@ func TestMySQLGolden(t *testing.T) {
 
 func TestDebug1(t *testing.T) {
 	// Debug
-	eval, err := testSingle(t, `SELECT ((0, NULL, "fOo", 0) * ("FOO" <=> ("FOO" LIKE ("fOo", (("fOo", 0, 1, -1) < 1), "fOo", "fOo")))) > "fOo"`)
-	t.Logf("eval=%s err=%v", eval.Value(), err) // want value=""
+	eval, err := testSingleType(t, `SELECT --9223372036854775808`)
+	t.Logf("eval=%s err=%v", eval.String(), err) // want value=""
 }

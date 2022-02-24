@@ -127,7 +127,7 @@
 			"Manual": false,
 			"Shard": "19",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_backups"]
 		},
 		"backup_transform": {
 			"File": "unused.go",
@@ -136,7 +136,7 @@
 			"Manual": false,
 			"Shard": "19",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_backups"]
 		},
 		"backup_transform_mysqlctld": {
 			"File": "unused.go",
@@ -400,6 +400,15 @@
 			"RetryMax": 1,
 			"Tags": []
 		},
+		"schemadiff_vrepl": {
+			"File": "unused.go",
+			"Args": ["vitess.io/vitess/go/test/endtoend/schemadiff/vrepl"],
+			"Command": [],
+			"Manual": false,
+			"Shard": "schemadiff_vrepl",
+			"RetryMax": 1,
+			"Tags": []
+		},
 		"pitr": {
 			"File": "unused.go",
 			"Args": ["vitess.io/vitess/go/test/endtoend/recovery/pitr"],
@@ -438,7 +447,7 @@
 			"Manual": false,
 			"Shard": "14",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_reparent"]
 		},
 		"plannedreparent": {
 			"File": "unused.go",
@@ -447,7 +456,16 @@
 			"Manual": false,
 			"Shard": "14",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_reparent"]
+		},
+		"newfeatures": {
+			"File": "unused.go",
+			"Args": ["vitess.io/vitess/go/test/endtoend/reparent/newfeaturetest"],
+			"Command": [],
+			"Manual": false,
+			"Shard": "14",
+			"RetryMax": 1,
+			"Tags": [""]
 		},
 		"resharding": {
 			"File": "unused.go",
@@ -676,7 +694,7 @@
 			"Manual": false,
 			"Shard": "vtgate_queries",
 			"RetryMax": 2,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_queries_subquery": {
 			"File": "unused.go",
@@ -685,7 +703,7 @@
 			"Manual": false,
 			"Shard": "vtgate_queries",
 			"RetryMax": 2,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_queries_union": {
 			"File": "unused.go",
@@ -694,7 +712,7 @@
 			"Manual": false,
 			"Shard": "vtgate_queries",
 			"RetryMax": 2,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_buffer": {
 			"File": "unused.go",
@@ -721,7 +739,7 @@
 			"Manual": false,
 			"Shard": "vtgate_schema",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_schematracker_loadkeyspace": {
 			"File": "unused.go",
@@ -748,7 +766,7 @@
 			"Manual": false,
 			"Shard": "vtgate_schema_tracker",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_schematracker_unsharded": {
 			"File": "unused.go",
@@ -757,7 +775,7 @@
 			"Manual": false,
 			"Shard": "vtgate_schema_tracker",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_mysql80": {
 			"File": "unused.go",
@@ -865,7 +883,7 @@
 			"Manual": false,
 			"Shard": "vtgate_vschema",
 			"RetryMax": 1,
-			"Tags": []
+			"Tags": ["upgrade_downgrade_query_serving"]
 		},
 		"vtgate_readafterwrite": {
 			"File": "unused.go",
@@ -1015,7 +1033,7 @@
 		},
 		"vreplication_materialize": {
 			"File": "unused.go",
-			"Args": ["vitess.io/vitess/go/test/endtoend/vreplication", "-run", "ShardedMaterialize"],
+			"Args": ["vitess.io/vitess/go/test/endtoend/vreplication", "-run", "TestMaterialize"],
 			"Command": [],
 			"Manual": false,
 			"Shard": "vreplication_multicell",
@@ -1078,7 +1096,16 @@
 		},
 		"vtorc_primary_failure": {
 			"File": "unused.go",
-			"Args": ["vitess.io/vitess/go/test/endtoend/vtorc/primaryFailure"],
+			"Args": ["vitess.io/vitess/go/test/endtoend/vtorc/primaryfailure"],
+			"Command": [],
+			"Manual": false,
+			"Shard": "vtorc",
+			"RetryMax": 3,
+			"Tags": []
+		},
+		"vtorc_graceful_takeover": {
+			"File": "unused.go",
+			"Args": ["vitess.io/vitess/go/test/endtoend/vtorc/gracefultakeover"],
 			"Command": [],
 			"Manual": false,
 			"Shard": "vtorc",
@@ -1109,7 +1136,16 @@
 			"Command": [],
 			"Manual": false,
 			"Shard": "vreplication_v2",
-			"RetryMax": 2,
+			"RetryMax": 1,
+			"Tags": []
+		},
+		"vreplication_across_db_versions": {
+			"File": "unused.go",
+			"Args": ["vitess.io/vitess/go/test/endtoend/vreplication", "-run", "TestV2WorkflowsAcrossDBVersions"],
+			"Command": [],
+			"Manual": false,
+			"Shard": "vreplication_across_db_versions",
+			"RetryMax": 1,
 			"Tags": []
 		},
 		"vreplication_migrate": {

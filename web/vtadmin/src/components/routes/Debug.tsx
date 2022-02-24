@@ -3,7 +3,9 @@ import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { Theme, useTheme } from '../../hooks/useTheme';
 import { Icon, Icons } from '../Icon';
 import { Select } from '../inputs/Select';
+import { Intent } from '../intent';
 import { ContentContainer } from '../layout/ContentContainer';
+import { warn, danger, success, info } from '../Snackbar';
 import { Tab } from '../tabs/Tab';
 import { TabContainer } from '../tabs/TabContainer';
 import { TextInput } from '../TextInput';
@@ -49,19 +51,26 @@ export const Debug = () => {
                 <section>
                     <h3 className="mt-12 mb-8">Colours</h3>
                     {[
-                        ['danger', 'danger-50', 'danger-200'],
-                        ['success', 'success-50', 'success-200'],
-                        ['warning', 'warning-50', 'warning-200'],
-                        ['vtblue', 'vtblue-50', 'vtblue-200'],
-                        ['vtblue-dark', 'vtblue-dark-50', 'vtblue-dark-200'],
-                        ['gray-75', 'gray-100', 'gray-200', 'gray-400', 'gray-600', 'gray-800', 'gray-900'],
+                        [style.danger, style.danger50, style.danger200],
+                        [style.success, style.success50, style.success200],
+                        [style.warning, style.warning50, style.warning200],
+                        [style.vtblue, style.vtblue50, style.vtblue200],
+                        [style.vtblueDark, style.vtblueDark50, style.vtblueDark200],
+                        [
+                            style.gray75,
+                            style.gray100,
+                            style.gray200,
+                            style.gray400,
+                            style.gray600,
+                            style.gray800,
+                            style.gray900,
+                        ],
                     ].map((colors, idx) => {
                         return (
                             <div className="flex my-8" key={idx}>
                                 {colors.map((c) => (
-                                    <div className="mr-4" key={c}>
-                                        <div className={`w-40 h-16 rounded bg-${c}`} />
-                                        <div className={`text-sm font-semibold text-${c}`}>{c}</div>
+                                    <div className={`${c} mr-4 font-semibold text-sm`} key={c}>
+                                        <div className="w-40 h-16 rounded" />
                                     </div>
                                 ))}
                             </div>
@@ -320,8 +329,44 @@ export const Debug = () => {
                         );
                     })}
                 </section>
+                <section>
+                    <Snackbars />
+                </section>
             </div>
         </ContentContainer>
+    );
+};
+
+const Snackbars: React.FC = () => {
+    const intents = Object.keys(Intent);
+    return (
+        <div>
+            <h3 className="mt-12 mb-8">Snackbars</h3>
+
+            {intents.map((i) => {
+                const onClick = () => {
+                    switch (i) {
+                        case 'danger':
+                            danger('This is a danger snackbar.');
+                            break;
+                        case 'success':
+                            success('This is a success snackbar.');
+                            break;
+                        case 'none':
+                            info('This is an info snackbar.');
+                            break;
+                        case 'warning':
+                            warn('This is a warn snackbar with a very very very very very very very long message.');
+                            break;
+                    }
+                };
+                return (
+                    <button onClick={onClick} className={`btn btn-secondary mr-2`} key={i}>
+                        {i}
+                    </button>
+                );
+            })}
+        </div>
     );
 };
 

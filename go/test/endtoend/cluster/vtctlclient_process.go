@@ -38,10 +38,11 @@ type VtctlClientProcess struct {
 
 // VtctlClientParams encapsulated params to provide if non-default
 type VtctlClientParams struct {
-	DDLStrategy    string
-	RequestContext string
-	SkipPreflight  bool
-	UUIDList       string
+	DDLStrategy      string
+	MigrationContext string
+	SkipPreflight    bool
+	UUIDList         string
+	CallerId         string
 }
 
 // InitShardPrimary executes vtctlclient command to make specified tablet the primary for the shard.
@@ -57,14 +58,27 @@ func (vtctlclient *VtctlClientProcess) InitShardPrimary(Keyspace string, Shard s
 	return err
 }
 
+// InitializeShard executes vtctlclient command to make specified tablet the primary for the shard.
+func (vtctlclient *VtctlClientProcess) InitializeShard(Keyspace string, Shard string, Cell string, TabletUID int) (err error) {
+	output, err := vtctlclient.ExecuteCommandWithOutput(
+		"PlannedReparentShard",
+		"-keyspace_shard", fmt.Sprintf("%s/%s", Keyspace, Shard),
+		"-wait_replicas_timeout", "31s",
+		"-new_primary", fmt.Sprintf("%s-%d", Cell, TabletUID))
+	if err != nil {
+		log.Errorf("error in PlannedReparentShard output %s, err %s", output, err.Error())
+	}
+	return err
+}
+
 // ApplySchemaWithOutput applies SQL schema to the keyspace
 func (vtctlclient *VtctlClientProcess) ApplySchemaWithOutput(Keyspace string, SQL string, params VtctlClientParams) (result string, err error) {
 	args := []string{
 		"ApplySchema",
 		"-sql", SQL,
 	}
-	if params.RequestContext != "" {
-		args = append(args, "-request_context", params.RequestContext)
+	if params.MigrationContext != "" {
+		args = append(args, "-migration_context", params.MigrationContext)
 	}
 	if params.DDLStrategy != "" {
 		args = append(args, "-ddl_strategy", params.DDLStrategy)
@@ -75,13 +89,17 @@ func (vtctlclient *VtctlClientProcess) ApplySchemaWithOutput(Keyspace string, SQ
 	if params.SkipPreflight {
 		args = append(args, "-skip_preflight")
 	}
+
+	if params.CallerId != "" {
+		args = append(args, "-caller_id", params.CallerId)
+	}
 	args = append(args, Keyspace)
 	return vtctlclient.ExecuteCommandWithOutput(args...)
 }
 
 // ApplySchema applies SQL schema to the keyspace
 func (vtctlclient *VtctlClientProcess) ApplySchema(Keyspace string, SQL string) error {
-	message, err := vtctlclient.ApplySchemaWithOutput(Keyspace, SQL, VtctlClientParams{DDLStrategy: "direct"})
+	message, err := vtctlclient.ApplySchemaWithOutput(Keyspace, SQL, VtctlClientParams{DDLStrategy: "direct -allow-zero-in-date", SkipPreflight: true})
 
 	return vterrors.Wrap(err, message)
 }

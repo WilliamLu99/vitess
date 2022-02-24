@@ -183,6 +183,16 @@ type TabletManagerClient struct {
 		Error  error
 	}
 	// keyed by tablet alias.
+	InitPrimaryDelays map[string]time.Duration
+	// keyed by tablet alias. injects a sleep to the end of the function
+	// regardless of parent context timeout or error result.
+	InitPrimaryPostDelays map[string]time.Duration
+	// keyed by tablet alias.
+	InitPrimaryResults map[string]struct {
+		Result string
+		Error  error
+	}
+	// keyed by tablet alias.
 	RefreshStateResults map[string]error
 	// keyed by `<tablet_alias>/<wait_pos>`.
 	ReloadSchemaDelays map[string]time.Duration
@@ -251,7 +261,7 @@ type TabletManagerClient struct {
 }
 
 // ChangeType is part of the tmclient.TabletManagerClient interface.
-func (fake *TabletManagerClient) ChangeType(ctx context.Context, tablet *topodatapb.Tablet, newType topodatapb.TabletType) error {
+func (fake *TabletManagerClient) ChangeType(ctx context.Context, tablet *topodatapb.Tablet, newType topodatapb.TabletType, semiSync bool) error {
 	if result, ok := fake.ChangeTabletTypeResult[topoproto.TabletAliasString(tablet.Alias)]; ok {
 		return result
 	}
@@ -449,7 +459,7 @@ func (fake *TabletManagerClient) PopulateReparentJournal(ctx context.Context, ta
 }
 
 // PromoteReplica is part of the tmclient.TabletManagerClient interface.
-func (fake *TabletManagerClient) PromoteReplica(ctx context.Context, tablet *topodatapb.Tablet) (string, error) {
+func (fake *TabletManagerClient) PromoteReplica(ctx context.Context, tablet *topodatapb.Tablet, semiSync bool) (string, error) {
 	if fake.PromoteReplicaResults == nil {
 		return "", assert.AnError
 	}
@@ -478,6 +488,42 @@ func (fake *TabletManagerClient) PromoteReplica(ctx context.Context, tablet *top
 	}
 
 	if result, ok := fake.PromoteReplicaResults[key]; ok {
+		return result.Result, result.Error
+	}
+
+	return "", assert.AnError
+}
+
+// InitPrimary is part of the tmclient.TabletManagerClient interface.
+func (fake *TabletManagerClient) InitPrimary(ctx context.Context, tablet *topodatapb.Tablet, semiSync bool) (string, error) {
+	if fake.InitPrimaryResults == nil {
+		return "", assert.AnError
+	}
+
+	key := topoproto.TabletAliasString(tablet.Alias)
+
+	defer func() {
+		if fake.InitPrimaryPostDelays == nil {
+			return
+		}
+
+		if delay, ok := fake.InitPrimaryPostDelays[key]; ok {
+			time.Sleep(delay)
+		}
+	}()
+
+	if fake.InitPrimaryDelays != nil {
+		if delay, ok := fake.InitPrimaryDelays[key]; ok {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(delay):
+				// proceed to results
+			}
+		}
+	}
+
+	if result, ok := fake.InitPrimaryResults[key]; ok {
 		return result.Result, result.Error
 	}
 
@@ -581,7 +627,7 @@ func (fake *TabletManagerClient) RunHealthCheck(ctx context.Context, tablet *top
 }
 
 // SetReplicationSource is part of the tmclient.TabletManagerClient interface.
-func (fake *TabletManagerClient) SetReplicationSource(ctx context.Context, tablet *topodatapb.Tablet, parent *topodatapb.TabletAlias, timeCreatedNS int64, waitPosition string, forceStartReplication bool) error {
+func (fake *TabletManagerClient) SetReplicationSource(ctx context.Context, tablet *topodatapb.Tablet, parent *topodatapb.TabletAlias, timeCreatedNS int64, waitPosition string, forceStartReplication bool, semiSync bool) error {
 	if fake.SetReplicationSourceResults == nil {
 		return assert.AnError
 	}
@@ -698,7 +744,7 @@ func (fake *TabletManagerClient) Sleep(ctx context.Context, tablet *topodatapb.T
 }
 
 // StartReplication is part of the tmclient.TabletManagerClient interface.
-func (fake *TabletManagerClient) StartReplication(ctx context.Context, tablet *topodatapb.Tablet) error {
+func (fake *TabletManagerClient) StartReplication(ctx context.Context, tablet *topodatapb.Tablet, semiSync bool) error {
 	if fake.StartReplicationResults == nil {
 		return assert.AnError
 	}
@@ -831,7 +877,7 @@ func (fake *TabletManagerClient) WaitForPosition(ctx context.Context, tablet *to
 }
 
 // UndoDemotePrimary is part of the tmclient.TabletManagerClient interface.
-func (fake *TabletManagerClient) UndoDemotePrimary(ctx context.Context, tablet *topodatapb.Tablet) error {
+func (fake *TabletManagerClient) UndoDemotePrimary(ctx context.Context, tablet *topodatapb.Tablet, semiSync bool) error {
 	if fake.UndoDemotePrimaryResults == nil {
 		return assert.AnError
 	}

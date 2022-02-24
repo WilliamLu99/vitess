@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
+
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 
@@ -32,7 +34,7 @@ import (
 )
 
 // buildInsertPlan builds the route for an INSERT statement.
-func buildInsertPlan(stmt sqlparser.Statement, reservedVars *sqlparser.ReservedVars, vschema ContextVSchema) (engine.Primitive, error) {
+func buildInsertPlan(stmt sqlparser.Statement, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (engine.Primitive, error) {
 	ins := stmt.(*sqlparser.Insert)
 	pb := newPrimitiveBuilder(vschema, newJointab(reservedVars))
 	exprs := sqlparser.TableExprs{&sqlparser.AliasedTableExpr{Expr: ins.Table}}
@@ -166,14 +168,21 @@ func buildInsertShardedPlan(ins *sqlparser.Insert, table *vindexes.Table) (engin
 	}
 
 	// Fill out the 3-d Values structure. Please see documentation of Insert.Values for details.
-	routeValues := make([][][]evalengine.Expr, len(eins.Table.ColumnVindexes))
-	for vIdx, colVindex := range eins.Table.ColumnVindexes {
+	var colVindexes []*vindexes.ColumnVindex
+	for _, colVindex := range eins.Table.ColumnVindexes {
+		if colVindex.IgnoreInDML() {
+			continue
+		}
+		colVindexes = append(colVindexes, colVindex)
+	}
+	routeValues := make([][][]evalengine.Expr, len(colVindexes))
+	for vIdx, colVindex := range colVindexes {
 		routeValues[vIdx] = make([][]evalengine.Expr, len(colVindex.Columns))
 		for colIdx, col := range colVindex.Columns {
 			routeValues[vIdx][colIdx] = make([]evalengine.Expr, len(rows))
 			colNum := findOrAddColumn(ins, col)
 			for rowNum, row := range rows {
-				innerpv, err := evalengine.Convert(row[colNum], semantics.EmptySemTable())
+				innerpv, err := evalengine.Translate(row[colNum], semantics.EmptySemTable())
 				if err != nil {
 					return nil, vterrors.Wrapf(err, "could not compute value for vindex or auto-inc column")
 				}
@@ -181,7 +190,7 @@ func buildInsertShardedPlan(ins *sqlparser.Insert, table *vindexes.Table) (engin
 			}
 		}
 	}
-	for _, colVindex := range eins.Table.ColumnVindexes {
+	for _, colVindex := range colVindexes {
 		for _, col := range colVindex.Columns {
 			colNum := findOrAddColumn(ins, col)
 			for rowNum, row := range rows {
@@ -191,6 +200,7 @@ func buildInsertShardedPlan(ins *sqlparser.Insert, table *vindexes.Table) (engin
 		}
 	}
 	eins.VindexValues = routeValues
+	eins.ColVindexes = colVindexes
 	eins.Query = generateQuery(ins)
 	generateInsertShardedQuery(ins, eins, rows)
 	return eins, nil
@@ -235,7 +245,7 @@ func modifyForAutoinc(ins *sqlparser.Insert, eins *engine.Insert) error {
 			row[colNum] = &sqlparser.NullVal{}
 		}
 
-		pv, err := evalengine.Convert(row[colNum], semantics.EmptySemTable())
+		pv, err := evalengine.Translate(row[colNum], semantics.EmptySemTable())
 		if err != nil {
 			return fmt.Errorf("could not compute value for vindex or auto-inc column: %v", err)
 		}

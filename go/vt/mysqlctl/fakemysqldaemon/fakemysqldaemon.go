@@ -160,8 +160,8 @@ type FakeMysqlDaemon struct {
 	// BinlogPlayerEnabled is used by {Enable,Disable}BinlogPlayer
 	BinlogPlayerEnabled sync2.AtomicBool
 
-	// SemiSyncMasterEnabled represents the state of rpl_semi_sync_master_enabled.
-	SemiSyncMasterEnabled bool
+	// SemiSyncPrimaryEnabled represents the state of rpl_semi_sync_master_enabled.
+	SemiSyncPrimaryEnabled bool
 	// SemiSyncReplicaEnabled represents the state of rpl_semi_sync_slave_enabled.
 	SemiSyncReplicaEnabled bool
 
@@ -536,10 +536,27 @@ func (fmd *FakeMysqlDaemon) PreflightSchemaChange(ctx context.Context, dbName st
 
 // ApplySchemaChange is part of the MysqlDaemon interface
 func (fmd *FakeMysqlDaemon) ApplySchemaChange(ctx context.Context, dbName string, change *tmutils.SchemaChange) (*tabletmanagerdatapb.SchemaChangeResult, error) {
-	if fmd.ApplySchemaChangeResult == nil {
-		return nil, fmt.Errorf("no apply schema defined")
+	beforeSchema, err := fmd.SchemaFunc()
+	if err != nil {
+		return nil, err
 	}
-	return fmd.ApplySchemaChangeResult, nil
+
+	dbaCon, err := fmd.GetDbaConnection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = fmd.db.HandleQuery(dbaCon.Conn, change.SQL, func(*sqltypes.Result) error { return nil }); err != nil {
+		return nil, err
+	}
+
+	afterSchema, err := fmd.SchemaFunc()
+	if err != nil {
+		return nil, err
+	}
+
+	return &tabletmanagerdatapb.SchemaChangeResult{
+		BeforeSchema: beforeSchema,
+		AfterSchema:  afterSchema}, nil
 }
 
 // GetAppConnection is part of the MysqlDaemon interface.
@@ -558,15 +575,15 @@ func (fmd *FakeMysqlDaemon) GetAllPrivsConnection(ctx context.Context) (*dbconnp
 }
 
 // SetSemiSyncEnabled is part of the MysqlDaemon interface.
-func (fmd *FakeMysqlDaemon) SetSemiSyncEnabled(master, replica bool) error {
-	fmd.SemiSyncMasterEnabled = master
+func (fmd *FakeMysqlDaemon) SetSemiSyncEnabled(primary, replica bool) error {
+	fmd.SemiSyncPrimaryEnabled = primary
 	fmd.SemiSyncReplicaEnabled = replica
 	return nil
 }
 
 // SemiSyncEnabled is part of the MysqlDaemon interface.
-func (fmd *FakeMysqlDaemon) SemiSyncEnabled() (master, replica bool) {
-	return fmd.SemiSyncMasterEnabled, fmd.SemiSyncReplicaEnabled
+func (fmd *FakeMysqlDaemon) SemiSyncEnabled() (primary, replica bool) {
+	return fmd.SemiSyncPrimaryEnabled, fmd.SemiSyncReplicaEnabled
 }
 
 // SemiSyncReplicationStatus is part of the MysqlDaemon interface.

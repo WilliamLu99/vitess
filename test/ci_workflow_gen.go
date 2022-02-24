@@ -81,7 +81,6 @@ var (
 		"tabletmanager_throttler_custom_config",
 		"tabletmanager_tablegc",
 		"tabletmanager_consul",
-		"vtorc",
 		"vtgate_buffer",
 		"vtgate_concurrentdml",
 		"vtgate_godriver",
@@ -102,11 +101,14 @@ var (
 		"resharding",
 		"resharding_bytes",
 		"mysql80",
+		"vreplication_across_db_versions",
 		"vreplication_multicell",
 		"vreplication_cellalias",
+		"vtorc",
+		"schemadiff_vrepl",
 	}
 
-	clusterSelfHostedList = []string{}
+	clusterSelfHostedList []string
 	clusterDockerList     = []string{
 		"vreplication_basic",
 		"vreplication_v2",
@@ -122,6 +124,7 @@ var (
 	}
 	clustersRequiringMySQL80 = []string{
 		"mysql80",
+		"vreplication_across_db_versions",
 	}
 )
 
@@ -302,11 +305,11 @@ func generateClusterWorkflows(list []string, tpl string) {
 		}
 
 		path := fmt.Sprintf("%s/cluster_endtoend_%s.yml", workflowConfigDir, cluster)
-		var tplPlatform string
 		template := tpl
 		if test.Platform != "" {
-			tplPlatform = "_" + test.Platform
-			template = fmt.Sprintf(tpl, tplPlatform)
+			template = fmt.Sprintf(tpl, "_"+test.Platform)
+		} else if strings.Contains(template, "%s") {
+			template = fmt.Sprintf(tpl, "")
 		}
 		err := writeFileFromTemplate(template, path, test)
 		if err != nil {

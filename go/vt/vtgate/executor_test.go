@@ -857,6 +857,7 @@ func TestExecutorShow(t *testing.T) {
 			buildVarCharRow("TestExecutor", "keyspace_id", "numeric", "", ""),
 			buildVarCharRow("TestExecutor", "krcol_unique_vdx", "keyrange_lookuper_unique", "", ""),
 			buildVarCharRow("TestExecutor", "krcol_vdx", "keyrange_lookuper", "", ""),
+			buildVarCharRow("TestExecutor", "multicol_vdx", "multicol", "column_bytes=1,3,4; column_count=3; column_vindex=hash,binary,unicode_loose_xxhash", ""),
 			buildVarCharRow("TestExecutor", "music_user_map", "lookup_hash_unique", "from=music_id; table=music_user_map; to=user_id", "music"),
 			buildVarCharRow("TestExecutor", "name_lastname_keyspace_id_map", "lookup", "from=name,lastname; table=name_lastname_keyspace_id_map; to=keyspace_id", "user2"),
 			buildVarCharRow("TestExecutor", "name_user_map", "lookup_hash", "from=name; table=name_user_map; to=user_id", "user"),
@@ -2113,7 +2114,7 @@ func TestExecutorExplain(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t,
-		`[[VARCHAR("Route") VARCHAR("SelectScatter") VARCHAR("TestExecutor") VARCHAR("") VARCHAR("UNKNOWN") VARCHAR("select * from `+"`user`"+`")]]`,
+		`[[VARCHAR("Route") VARCHAR("Scatter") VARCHAR("TestExecutor") VARCHAR("") VARCHAR("UNKNOWN") VARCHAR("select * from `+"`user`"+`")]]`,
 		fmt.Sprintf("%v", result.Rows))
 
 	result, err = executorExec(executor, "explain format = vitess select 42", bindVars)
@@ -2289,7 +2290,7 @@ func TestExecutorSavepointInTxWithReservedConn(t *testing.T) {
 	logChan := QueryLogger.Subscribe("TestExecutorSavepoint")
 	defer QueryLogger.Unsubscribe(logChan)
 
-	session := NewSafeSession(&vtgatepb.Session{Autocommit: true, TargetString: "TestExecutor", EnableSystemSettings: true})
+	session := NewSafeSession(&vtgatepb.Session{EnableSetVar: true, Autocommit: true, TargetString: "TestExecutor", EnableSystemSettings: true})
 	sbc1.SetResults([]*sqltypes.Result{
 		sqltypes.MakeTestResult(sqltypes.MakeTestFields("orig|new", "varchar|varchar"), "a|"),
 	})
@@ -2311,6 +2312,7 @@ func TestExecutorSavepointInTxWithReservedConn(t *testing.T) {
 	_, err = exec(executor, session, "commit")
 	require.NoError(t, err)
 	emptyBV := map[string]*querypb.BindVariable{}
+
 	sbc1WantQueries := []*querypb.BoundQuery{{
 		Sql: "select @@sql_mode orig, '' new", BindVariables: emptyBV,
 	}, {
@@ -2336,6 +2338,7 @@ func TestExecutorSavepointInTxWithReservedConn(t *testing.T) {
 	}, {
 		Sql: "select id from `user` where id = 3", BindVariables: emptyBV,
 	}}
+
 	utils.MustMatch(t, sbc1WantQueries, sbc1.Queries, "")
 	utils.MustMatch(t, sbc2WantQueries, sbc2.Queries, "")
 	testQueryLog(t, logChan, "TestExecute", "SET", "set session sql_mode = ''", 1)

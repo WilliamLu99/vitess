@@ -28,6 +28,8 @@ import (
 	"strings"
 	"testing"
 
+	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
+
 	"vitess.io/vitess/go/mysql/collations"
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 
@@ -170,6 +172,10 @@ func (m *multiColIndex) Verify(vcursor vindexes.VCursor, rowsColValues [][]sqlty
 	return []bool{}, nil
 }
 
+func (m *multiColIndex) PartialVindex() bool {
+	return true
+}
+
 func init() {
 	vindexes.Register("hash_test", newHashIndex)
 	vindexes.Register("lookup_test", newLookupIndex)
@@ -183,19 +189,28 @@ const (
 	gen4ErrorPrefix = "Gen4 error: "
 )
 
+func makeTestOutput(t *testing.T) string {
+	testOutputTempDir, err := os.MkdirTemp("testdata", "plan_test")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if !t.Failed() {
+			_ = os.RemoveAll(testOutputTempDir)
+		} else {
+			t.Logf("Errors found in plantests. If the output is correct, run `cp %s/* testdata/` to update test expectations", testOutputTempDir)
+		}
+	})
+
+	return testOutputTempDir
+}
+
 func TestPlan(t *testing.T) {
 	vschemaWrapper := &vschemaWrapper{
 		v:             loadSchema(t, "schema_test.json", true),
 		sysVarEnabled: true,
 	}
+	testOutputTempDir := makeTestOutput(t)
 
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer func() {
-		if !t.Failed() {
-			os.RemoveAll(testOutputTempDir)
-		}
-	}()
 	// You will notice that some tests expect user.Id instead of user.id.
 	// This is because we now pre-create vindex columns in the symbol
 	// table, which come from vschema. In the test vschema,
@@ -232,10 +247,7 @@ func TestSysVarSetDisabled(t *testing.T) {
 		sysVarEnabled: false,
 	}
 
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(testOutputTempDir)
-	testFile(t, "set_sysvar_disabled_cases.txt", testOutputTempDir, vschemaWrapper)
+	testFile(t, "set_sysvar_disabled_cases.txt", makeTestOutput(t), vschemaWrapper)
 }
 
 func TestOne(t *testing.T) {
@@ -252,15 +264,7 @@ func TestRubyOnRailsQueries(t *testing.T) {
 		sysVarEnabled: true,
 	}
 
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer func() {
-		if !t.Failed() {
-			os.RemoveAll(testOutputTempDir)
-		}
-	}()
-
-	testFile(t, "rails_cases.txt", testOutputTempDir, vschemaWrapper)
+	testFile(t, "rails_cases.txt", makeTestOutput(t), vschemaWrapper)
 }
 
 func TestOLTP(t *testing.T) {
@@ -269,15 +273,7 @@ func TestOLTP(t *testing.T) {
 		sysVarEnabled: true,
 	}
 
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer func() {
-		if !t.Failed() {
-			os.RemoveAll(testOutputTempDir)
-		}
-	}()
-
-	testFile(t, "oltp_cases.txt", testOutputTempDir, vschemaWrapper)
+	testFile(t, "oltp_cases.txt", makeTestOutput(t), vschemaWrapper)
 }
 
 func TestTPCC(t *testing.T) {
@@ -286,15 +282,7 @@ func TestTPCC(t *testing.T) {
 		sysVarEnabled: true,
 	}
 
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer func() {
-		if !t.Failed() {
-			os.RemoveAll(testOutputTempDir)
-		}
-	}()
-
-	testFile(t, "tpcc_cases.txt", testOutputTempDir, vschemaWrapper)
+	testFile(t, "tpcc_cases.txt", makeTestOutput(t), vschemaWrapper)
 }
 
 func TestTPCH(t *testing.T) {
@@ -303,15 +291,7 @@ func TestTPCH(t *testing.T) {
 		sysVarEnabled: true,
 	}
 
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer func() {
-		if !t.Failed() {
-			os.RemoveAll(testOutputTempDir)
-		}
-	}()
-
-	testFile(t, "tpch_cases.txt", testOutputTempDir, vschemaWrapper)
+	testFile(t, "tpch_cases.txt", makeTestOutput(t), vschemaWrapper)
 }
 
 func BenchmarkOLTP(b *testing.B) {
@@ -345,10 +325,6 @@ func benchmarkWorkload(b *testing.B, name string) {
 }
 
 func TestBypassPlanningShardTargetFromFile(t *testing.T) {
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(testOutputTempDir)
-
 	vschema := &vschemaWrapper{
 		v: loadSchema(t, "schema_test.json", true),
 		keyspace: &vindexes.Keyspace{
@@ -358,13 +334,9 @@ func TestBypassPlanningShardTargetFromFile(t *testing.T) {
 		tabletType: topodatapb.TabletType_PRIMARY,
 		dest:       key.DestinationShard("-80")}
 
-	testFile(t, "bypass_shard_cases.txt", testOutputTempDir, vschema)
+	testFile(t, "bypass_shard_cases.txt", makeTestOutput(t), vschema)
 }
 func TestBypassPlanningKeyrangeTargetFromFile(t *testing.T) {
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(testOutputTempDir)
-
 	keyRange, _ := key.ParseShardingSpec("-")
 
 	vschema := &vschemaWrapper{
@@ -377,18 +349,11 @@ func TestBypassPlanningKeyrangeTargetFromFile(t *testing.T) {
 		dest:       key.DestinationExactKeyRange{KeyRange: keyRange[0]},
 	}
 
-	testFile(t, "bypass_keyrange_cases.txt", testOutputTempDir, vschema)
+	testFile(t, "bypass_keyrange_cases.txt", makeTestOutput(t), vschema)
 }
 
 func TestWithDefaultKeyspaceFromFile(t *testing.T) {
 	// We are testing this separately so we can set a default keyspace
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer func() {
-		if !t.Failed() {
-			_ = os.RemoveAll(testOutputTempDir)
-		}
-	}()
 	vschema := &vschemaWrapper{
 		v: loadSchema(t, "schema_test.json", true),
 		keyspace: &vindexes.Keyspace{
@@ -398,6 +363,7 @@ func TestWithDefaultKeyspaceFromFile(t *testing.T) {
 		tabletType: topodatapb.TabletType_PRIMARY,
 	}
 
+	testOutputTempDir := makeTestOutput(t)
 	testFile(t, "alterVschema_cases.txt", testOutputTempDir, vschema)
 	testFile(t, "ddl_cases.txt", testOutputTempDir, vschema)
 	testFile(t, "migration_cases.txt", testOutputTempDir, vschema)
@@ -408,23 +374,17 @@ func TestWithDefaultKeyspaceFromFile(t *testing.T) {
 
 func TestWithSystemSchemaAsDefaultKeyspace(t *testing.T) {
 	// We are testing this separately so we can set a default keyspace
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(testOutputTempDir)
 	vschema := &vschemaWrapper{
 		v:          loadSchema(t, "schema_test.json", true),
 		keyspace:   &vindexes.Keyspace{Name: "information_schema"},
 		tabletType: topodatapb.TabletType_PRIMARY,
 	}
 
-	testFile(t, "sysschema_default.txt", testOutputTempDir, vschema)
+	testFile(t, "sysschema_default.txt", makeTestOutput(t), vschema)
 }
 
 func TestOtherPlanningFromFile(t *testing.T) {
 	// We are testing this separately so we can set a default keyspace
-	testOutputTempDir, err := os.MkdirTemp("", "plan_test")
-	defer os.RemoveAll(testOutputTempDir)
-	require.NoError(t, err)
 	vschema := &vschemaWrapper{
 		v: loadSchema(t, "schema_test.json", true),
 		keyspace: &vindexes.Keyspace{
@@ -434,6 +394,7 @@ func TestOtherPlanningFromFile(t *testing.T) {
 		tabletType: topodatapb.TabletType_PRIMARY,
 	}
 
+	testOutputTempDir := makeTestOutput(t)
 	testFile(t, "other_read_cases.txt", testOutputTempDir, vschema)
 	testFile(t, "other_admin_cases.txt", testOutputTempDir, vschema)
 }
@@ -468,7 +429,7 @@ func loadSchema(t testing.TB, filename string, setCollation bool) *vindexes.VSch
 	return vschema
 }
 
-var _ ContextVSchema = (*vschemaWrapper)(nil)
+var _ plancontext.VSchema = (*vschemaWrapper)(nil)
 
 type vschemaWrapper struct {
 	v             *vindexes.VSchema
@@ -476,7 +437,7 @@ type vschemaWrapper struct {
 	tabletType    topodatapb.TabletType
 	dest          key.Destination
 	sysVarEnabled bool
-	version       PlannerVersion
+	version       plancontext.PlannerVersion
 }
 
 func (vw *vschemaWrapper) ConnCollation() collations.ID {
@@ -497,12 +458,12 @@ func (vw *vschemaWrapper) AllKeyspace() ([]*vindexes.Keyspace, error) {
 	return []*vindexes.Keyspace{vw.keyspace}, nil
 }
 
-func (vw *vschemaWrapper) Planner() PlannerVersion {
+func (vw *vschemaWrapper) Planner() plancontext.PlannerVersion {
 	return vw.version
 }
 
 // SetPlannerVersion implements the ContextVSchema interface
-func (vw *vschemaWrapper) SetPlannerVersion(v PlannerVersion) {
+func (vw *vschemaWrapper) SetPlannerVersion(v plancontext.PlannerVersion) {
 	vw.version = v
 }
 
@@ -689,7 +650,6 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 		if tempDir != "" {
 			gotFile := fmt.Sprintf("%s/%s", tempDir, filename)
 			_ = os.WriteFile(gotFile, []byte(strings.TrimSpace(expected.String())+"\n"), 0644)
-			fmt.Println(fmt.Sprintf("Errors found in plantests. If the output is correct, run `cp %s/* testdata/` to update test expectations", tempDir)) // nolint
 		}
 	})
 }
@@ -918,7 +878,7 @@ func BenchmarkSelectVsDML(b *testing.B) {
 	})
 }
 
-func benchmarkPlanner(b *testing.B, version PlannerVersion, testCases []testCase, vschema *vschemaWrapper) {
+func benchmarkPlanner(b *testing.B, version plancontext.PlannerVersion, testCases []testCase, vschema *vschemaWrapper) {
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
 		for _, tcase := range testCases {

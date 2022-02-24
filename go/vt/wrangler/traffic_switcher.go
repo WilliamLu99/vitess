@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"vitess.io/vitess/go/sqlescape"
 	"vitess.io/vitess/go/vt/discovery"
 
 	"vitess.io/vitess/go/json2"
@@ -47,6 +48,7 @@ import (
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vschemapb "vitess.io/vitess/go/vt/proto/vschema"
+	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 )
 
 const (
@@ -61,6 +63,11 @@ type accessType int
 const (
 	allowWrites = accessType(iota)
 	disallowWrites
+
+	// number of LOCK TABLES cycles to perform on the sources during SwitchWrites
+	lockTablesCycles = 2
+	// time to wait between LOCK TABLES cycles on the sources during SwitchWrites
+	lockTablesCycleDelay = time.Duration(100 * time.Millisecond)
 )
 
 // trafficSwitcher contains the metadata for switching read and write traffic
@@ -71,19 +78,20 @@ type trafficSwitcher struct {
 	workflow      string
 
 	// if frozen is true, the rest of the fields are not set.
-	frozen          bool
-	reverseWorkflow string
-	id              int64
-	sources         map[string]*workflow.MigrationSource
-	targets         map[string]*workflow.MigrationTarget
-	sourceKeyspace  string
-	targetKeyspace  string
-	tables          []string
-	sourceKSSchema  *vindexes.KeyspaceSchema
-	optCells        string //cells option passed to MoveTables/Reshard
-	optTabletTypes  string //tabletTypes option passed to MoveTables/Reshard
-	externalCluster string
-	externalTopo    *topo.Server
+	frozen           bool
+	reverseWorkflow  string
+	id               int64
+	sources          map[string]*workflow.MigrationSource
+	targets          map[string]*workflow.MigrationTarget
+	sourceKeyspace   string
+	targetKeyspace   string
+	tables           []string
+	keepRoutingRules bool
+	sourceKSSchema   *vindexes.KeyspaceSchema
+	optCells         string //cells option passed to MoveTables/Reshard
+	optTabletTypes   string //tabletTypes option passed to MoveTables/Reshard
+	externalCluster  string
+	externalTopo     *topo.Server
 }
 
 /*
@@ -480,6 +488,7 @@ func (wr *Wrangler) SwitchWrites(ctx context.Context, targetKeyspace, workflowNa
 			sw.cancelMigration(ctx, sm)
 			return 0, sw.logs(), nil
 		}
+
 		ts.Logger().Infof("Stopping streams")
 		sourceWorkflows, err = sw.stopStreams(ctx, sm)
 		if err != nil {
@@ -492,11 +501,28 @@ func (wr *Wrangler) SwitchWrites(ctx context.Context, targetKeyspace, workflowNa
 			sw.cancelMigration(ctx, sm)
 			return 0, nil, err
 		}
+
 		ts.Logger().Infof("Stopping source writes")
 		if err := sw.stopSourceWrites(ctx); err != nil {
 			ts.Logger().Errorf("stopSourceWrites failed: %v", err)
 			sw.cancelMigration(ctx, sm)
 			return 0, nil, err
+		}
+
+		if ts.MigrationType() == binlogdatapb.MigrationType_TABLES {
+			ts.Logger().Infof("Executing LOCK TABLES on source tables %d times", lockTablesCycles)
+			// Doing this twice with a pause in-between to catch any writes that may have raced in between
+			// the tablet's deny list check and the first mysqld side table lock.
+			for cnt := 1; cnt <= lockTablesCycles; cnt++ {
+				if err := ts.executeLockTablesOnSource(ctx); err != nil {
+					ts.Logger().Errorf("Failed to execute LOCK TABLES (attempt %d of %d) on sources: %v", cnt, lockTablesCycles, err)
+					sw.cancelMigration(ctx, sm)
+					return 0, nil, err
+				}
+				// No need to UNLOCK the tables as the connection was closed once the locks were acquired
+				// and thus the locks released.
+				time.Sleep(lockTablesCycleDelay)
+			}
 		}
 
 		ts.Logger().Infof("Waiting for streams to catchup")
@@ -567,12 +593,13 @@ func (wr *Wrangler) SwitchWrites(ctx context.Context, targetKeyspace, workflowNa
 }
 
 // DropTargets cleans up target tables, shards and denied tables if a MoveTables/Reshard is cancelled
-func (wr *Wrangler) DropTargets(ctx context.Context, targetKeyspace, workflow string, keepData, dryRun bool) (*[]string, error) {
+func (wr *Wrangler) DropTargets(ctx context.Context, targetKeyspace, workflow string, keepData, keepRoutingRules, dryRun bool) (*[]string, error) {
 	ts, err := wr.buildTrafficSwitcher(ctx, targetKeyspace, workflow)
 	if err != nil {
 		wr.Logger().Errorf("buildTrafficSwitcher failed: %v", err)
 		return nil, err
 	}
+	ts.keepRoutingRules = keepRoutingRules
 	var sw iswitcher
 	if dryRun {
 		sw = &switcherDryRun{ts: ts, drLog: NewLogRecorder()}
@@ -613,7 +640,7 @@ func (wr *Wrangler) DropTargets(ctx context.Context, targetKeyspace, workflow st
 			}
 		}
 	}
-	if err := wr.dropArtifacts(ctx, sw); err != nil {
+	if err := wr.dropArtifacts(ctx, keepRoutingRules, sw); err != nil {
 		return nil, err
 	}
 	if err := ts.TopoServer().RebuildSrvVSchema(ctx, nil); err != nil {
@@ -622,15 +649,17 @@ func (wr *Wrangler) DropTargets(ctx context.Context, targetKeyspace, workflow st
 	return sw.logs(), nil
 }
 
-func (wr *Wrangler) dropArtifacts(ctx context.Context, sw iswitcher) error {
+func (wr *Wrangler) dropArtifacts(ctx context.Context, keepRoutingRules bool, sw iswitcher) error {
 	if err := sw.dropSourceReverseVReplicationStreams(ctx); err != nil {
 		return err
 	}
 	if err := sw.dropTargetVReplicationStreams(ctx); err != nil {
 		return err
 	}
-	if err := sw.deleteRoutingRules(ctx); err != nil {
-		return err
+	if !keepRoutingRules {
+		if err := sw.deleteRoutingRules(ctx); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -639,7 +668,7 @@ func (wr *Wrangler) dropArtifacts(ctx context.Context, sw iswitcher) error {
 // finalizeMigrateWorkflow deletes the streams for the Migrate workflow.
 // We only cleanup the target for external sources
 func (wr *Wrangler) finalizeMigrateWorkflow(ctx context.Context, targetKeyspace, workflow, tableSpecs string,
-	cancel, keepData, dryRun bool) (*[]string, error) {
+	cancel, keepData, keepRoutingRules, dryRun bool) (*[]string, error) {
 	ts, err := wr.buildTrafficSwitcher(ctx, targetKeyspace, workflow)
 	if err != nil {
 		wr.Logger().Errorf("buildTrafficSwitcher failed: %v", err)
@@ -678,7 +707,7 @@ func (wr *Wrangler) finalizeMigrateWorkflow(ctx context.Context, targetKeyspace,
 }
 
 // DropSources cleans up source tables, shards and denied tables after a MoveTables/Reshard is completed
-func (wr *Wrangler) DropSources(ctx context.Context, targetKeyspace, workflowName string, removalType workflow.TableRemovalType, keepData, force, dryRun bool) (*[]string, error) {
+func (wr *Wrangler) DropSources(ctx context.Context, targetKeyspace, workflowName string, removalType workflow.TableRemovalType, keepData, keepRoutingRules, force, dryRun bool) (*[]string, error) {
 	ts, err := wr.buildTrafficSwitcher(ctx, targetKeyspace, workflowName)
 	if err != nil {
 		wr.Logger().Errorf("buildTrafficSwitcher failed: %v", err)
@@ -731,7 +760,7 @@ func (wr *Wrangler) DropSources(ctx context.Context, targetKeyspace, workflowNam
 			}
 		}
 	}
-	if err := wr.dropArtifacts(ctx, sw); err != nil {
+	if err := wr.dropArtifacts(ctx, keepRoutingRules, sw); err != nil {
 		return nil, err
 	}
 	if err := ts.TopoServer().RebuildSrvVSchema(ctx, nil); err != nil {
@@ -991,6 +1020,38 @@ func (ts *trafficSwitcher) changeTableSourceWrites(ctx context.Context, access a
 	})
 }
 
+// executeLockTablesOnSource executes a LOCK TABLES tb1 READ, tbl2 READ,... statement on each
+// source shard's primary tablet using a non-pooled connection as the DBA user. The connection
+// is closed when the LOCK TABLES statement returns, so we immediately release the LOCKs.
+func (ts *trafficSwitcher) executeLockTablesOnSource(ctx context.Context) error {
+	ts.Logger().Infof("Locking (and then immediately unlocking) the following tables on source keyspace %v: %v", ts.SourceKeyspaceName(), ts.Tables())
+	if len(ts.Tables()) == 0 {
+		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "no tables found in the source keyspace %v associated with the %s workflow", ts.SourceKeyspaceName(), ts.WorkflowName())
+	}
+
+	sb := strings.Builder{}
+	sb.WriteString("LOCK TABLES ")
+	for _, tableName := range ts.Tables() {
+		sb.WriteString(fmt.Sprintf("%s READ,", sqlescape.EscapeID(tableName)))
+	}
+	// trim extra trailing comma
+	lockStmt := sb.String()[:sb.Len()-1]
+
+	return ts.ForAllSources(func(source *workflow.MigrationSource) error {
+		primary := source.GetPrimary()
+		if primary == nil {
+			return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "no primary found for source shard %s", source.GetShard())
+		}
+		tablet := primary.Tablet
+		_, err := ts.wr.ExecuteFetchAsDba(ctx, tablet.Alias, lockStmt, 1, false, true)
+		if err != nil {
+			ts.Logger().Errorf("Error executing %s on source tablet %v: %v", lockStmt, tablet, err)
+			return err
+		}
+		return err
+	})
+}
+
 func (ts *trafficSwitcher) waitForCatchup(ctx context.Context, filteredReplicationWaitTime time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, filteredReplicationWaitTime)
 	defer cancel()
@@ -1107,7 +1168,7 @@ func (ts *trafficSwitcher) createReverseVReplication(ctx context.Context) error 
 					// We currently assume the primary vindex is the best way to filter, which may not be true.
 					inKeyrange = fmt.Sprintf(" where in_keyrange(%s, '%s.%s', '%s')", sqlparser.String(vtable.ColumnVindexes[0].Columns[0]), ts.SourceKeyspaceName(), vtable.ColumnVindexes[0].Name, key.KeyRangeString(source.GetShard().KeyRange))
 				}
-				filter = fmt.Sprintf("select * from %s%s", rule.Match, inKeyrange)
+				filter = fmt.Sprintf("select * from %s%s", sqlescape.EscapeID(rule.Match), inKeyrange)
 			}
 			reverseBls.Filter.Rules = append(reverseBls.Filter.Rules, &binlogdatapb.Rule{
 				Match:  rule.Match,
@@ -1361,19 +1422,21 @@ func doValidateWorkflowHasCompleted(ctx context.Context, ts *trafficSwitcher) er
 			return nil
 		})
 	}
-
-	//check if table is routable
 	wg.Wait()
-	if ts.MigrationType() == binlogdatapb.MigrationType_TABLES {
-		rules, err := topotools.GetRoutingRules(ctx, ts.TopoServer())
-		if err != nil {
-			rec.RecordError(fmt.Errorf("could not get RoutingRules"))
-		}
-		for fromTable, toTables := range rules {
-			for _, toTable := range toTables {
-				for _, table := range ts.Tables() {
-					if toTable == fmt.Sprintf("%s.%s", ts.SourceKeyspaceName(), table) {
-						rec.RecordError(fmt.Errorf("routing still exists from keyspace %s table %s to %s", ts.SourceKeyspaceName(), table, fromTable))
+
+	if !ts.keepRoutingRules {
+		//check if table is routable
+		if ts.MigrationType() == binlogdatapb.MigrationType_TABLES {
+			rules, err := topotools.GetRoutingRules(ctx, ts.TopoServer())
+			if err != nil {
+				rec.RecordError(fmt.Errorf("could not get RoutingRules"))
+			}
+			for fromTable, toTables := range rules {
+				for _, toTable := range toTables {
+					for _, table := range ts.Tables() {
+						if toTable == fmt.Sprintf("%s.%s", ts.SourceKeyspaceName(), table) {
+							rec.RecordError(fmt.Errorf("routing still exists from keyspace %s table %s to %s", ts.SourceKeyspaceName(), table, fromTable))
+						}
 					}
 				}
 			}
@@ -1393,20 +1456,24 @@ func getRenameFileName(tableName string) string {
 func (ts *trafficSwitcher) removeSourceTables(ctx context.Context, removalType workflow.TableRemovalType) error {
 	err := ts.ForAllSources(func(source *workflow.MigrationSource) error {
 		for _, tableName := range ts.Tables() {
-			query := fmt.Sprintf("drop table %s.%s", source.GetPrimary().DbName(), tableName)
+			query := fmt.Sprintf("drop table %s.%s",
+				sqlescape.EscapeID(sqlescape.UnescapeID(source.GetPrimary().DbName())),
+				sqlescape.EscapeID(sqlescape.UnescapeID(tableName)))
 			if removalType == workflow.DropTable {
-				ts.Logger().Infof("Dropping table %s.%s\n", source.GetPrimary().DbName(), tableName)
+				ts.Logger().Infof("%s: Dropping table %s.%s\n",
+					source.GetPrimary().String(), source.GetPrimary().DbName(), tableName)
 			} else {
 				renameName := getRenameFileName(tableName)
-				ts.Logger().Infof("Renaming table %s.%s to %s.%s\n", source.GetPrimary().DbName(), tableName, source.GetPrimary().DbName(), renameName)
+				ts.Logger().Infof("%s: Renaming table %s.%s to %s.%s\n",
+					source.GetPrimary().String(), source.GetPrimary().DbName(), tableName, source.GetPrimary().DbName(), renameName)
 				query = fmt.Sprintf("rename table %s.%s TO %s.%s", source.GetPrimary().DbName(), tableName, source.GetPrimary().DbName(), renameName)
 			}
 			_, err := ts.wr.ExecuteFetchAsDba(ctx, source.GetPrimary().Alias, query, 1, false, true)
 			if err != nil {
-				ts.Logger().Errorf("Error removing table %s: %v", tableName, err)
+				ts.Logger().Errorf("%s: Error removing table %s: %v", source.GetPrimary().String(), tableName, err)
 				return err
 			}
-			ts.Logger().Infof("Removed table %s.%s\n", source.GetPrimary().DbName(), tableName)
+			ts.Logger().Infof("%s: Removed table %s.%s\n", source.GetPrimary().String(), source.GetPrimary().DbName(), tableName)
 
 		}
 		return nil
@@ -1481,14 +1548,19 @@ func (ts *trafficSwitcher) removeTargetTables(ctx context.Context) error {
 	log.Infof("removeTargetTables")
 	err := ts.ForAllTargets(func(target *workflow.MigrationTarget) error {
 		for _, tableName := range ts.Tables() {
-			query := fmt.Sprintf("drop table %s.%s", target.GetPrimary().DbName(), tableName)
-			ts.Logger().Infof("Dropping table %s.%s\n", target.GetPrimary().DbName(), tableName)
+			query := fmt.Sprintf("drop table %s.%s",
+				sqlescape.EscapeID(sqlescape.UnescapeID(target.GetPrimary().DbName())),
+				sqlescape.EscapeID(sqlescape.UnescapeID(tableName)))
+			ts.Logger().Infof("%s: Dropping table %s.%s\n",
+				target.GetPrimary().String(), target.GetPrimary().DbName(), tableName)
 			_, err := ts.wr.ExecuteFetchAsDba(ctx, target.GetPrimary().Alias, query, 1, false, true)
 			if err != nil {
-				ts.Logger().Errorf("Error removing table %s: %v", tableName, err)
+				ts.Logger().Errorf("%s: Error removing table %s: %v",
+					target.GetPrimary().String(), tableName, err)
 				return err
 			}
-			ts.Logger().Infof("Removed table %s.%s\n", target.GetPrimary().DbName(), tableName)
+			ts.Logger().Infof("%s: Removed table %s.%s\n",
+				target.GetPrimary().String(), target.GetPrimary().DbName(), tableName)
 
 		}
 		return nil

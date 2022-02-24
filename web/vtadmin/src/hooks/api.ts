@@ -13,7 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { useQueries, useQuery, useQueryClient, UseQueryOptions, UseQueryResult } from 'react-query';
+import {
+    useMutation,
+    UseMutationOptions,
+    useQueries,
+    useQuery,
+    useQueryClient,
+    UseQueryOptions,
+    UseQueryResult,
+} from 'react-query';
 import {
     fetchBackups,
     fetchClusters,
@@ -37,6 +45,12 @@ import {
     TabletDebugVarsResponse,
     refreshState,
     runHealthCheck,
+    deleteTablet,
+    reparentTablet,
+    startReplication,
+    stopReplication,
+    setReadOnly,
+    setReadWrite,
 } from '../api/http';
 import { vtadmin as pb } from '../proto/vtadmin';
 import { formatAlias } from '../util/tablets';
@@ -116,6 +130,80 @@ export const useTablet = (params: Parameters<typeof fetchTablet>[0], options?: U
         },
         ...options,
     });
+};
+
+/**
+ *
+ * useDeleteTablet is a mutate hook that deletes a tablet by alias and optionally, cluster id.
+ */
+export const useDeleteTablet = (
+    params: Parameters<typeof deleteTablet>[0],
+    options: UseMutationOptions<Awaited<ReturnType<typeof deleteTablet>>, Error>
+) => {
+    return useMutation<Awaited<ReturnType<typeof deleteTablet>>, Error>(() => {
+        return deleteTablet(params);
+    }, options);
+};
+
+/**
+ * useReparentTablet reparents a tablet to the current primary in the shard.
+ * This only works if the current replication position matches the last known reparent action.
+ */
+export const useReparentTablet = (
+    params: Parameters<typeof reparentTablet>[0],
+    options: UseMutationOptions<Awaited<ReturnType<typeof reparentTablet>>, Error>
+) => {
+    return useMutation<Awaited<ReturnType<typeof reparentTablet>>, Error>(() => {
+        return reparentTablet(params);
+    }, options);
+};
+
+/**
+ * useSetReadOnly sets the tablet to read only
+ */
+export const useSetReadOnly = (
+    params: Parameters<typeof setReadOnly>[0],
+    options: UseMutationOptions<Awaited<ReturnType<typeof setReadOnly>>, Error>
+) => {
+    return useMutation<Awaited<ReturnType<typeof setReadOnly>>, Error>(() => {
+        return setReadOnly(params);
+    }, options);
+};
+
+/**
+ * useSetReadWrite sets the tablet to read only
+ */
+export const useSetReadWrite = (
+    params: Parameters<typeof setReadWrite>[0],
+    options: UseMutationOptions<Awaited<ReturnType<typeof setReadWrite>>, Error>
+) => {
+    return useMutation<Awaited<ReturnType<typeof setReadWrite>>, Error>(() => {
+        return setReadWrite(params);
+    }, options);
+};
+
+/**
+ * useStartReplication starts replication on the specified tablet.
+ */
+export const useStartReplication = (
+    params: Parameters<typeof startReplication>[0],
+    options: UseMutationOptions<Awaited<ReturnType<typeof startReplication>>, Error>
+) => {
+    return useMutation<Awaited<ReturnType<typeof startReplication>>, Error>(() => {
+        return startReplication(params);
+    }, options);
+};
+
+/**
+ * useStopReplication stops replication on the specified tablet.
+ */
+export const useStopReplication = (
+    params: Parameters<typeof stopReplication>[0],
+    options: UseMutationOptions<Awaited<ReturnType<typeof stopReplication>>, Error>
+) => {
+    return useMutation<Awaited<ReturnType<typeof stopReplication>>, Error>(() => {
+        return stopReplication(params);
+    }, options);
 };
 
 /**

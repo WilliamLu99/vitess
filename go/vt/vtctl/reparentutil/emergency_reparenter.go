@@ -307,13 +307,13 @@ func (erp *EmergencyReparenter) waitForAllRelayLogsToApply(
 		// maps: (1) the StopReplicationStatus of any replicas that actually
 		// stopped replication; and (2) the PrimaryStatus of anything that
 		// returned ErrNotReplica, which is a tablet that is either the current
-		// primary or is stuck thinking it is a MASTER but is not in actuality.
+		// primary or is stuck thinking it is a PRIMARY but is not in actuality.
 		//
 		// If we have a tablet in the validCandidates map that does not appear
 		// in the statusMap, then we have either (a) the current primary, which
 		// is not replicating, so it is not applying relay logs; or (b) a tablet
-		// that is stuck thinking it is MASTER but is not in actuality. In that
-		// second case - (b) - we will most likely find that the stuck MASTER
+		// that is stuck thinking it is PRIMARY but is not in actuality. In that
+		// second case - (b) - we will most likely find that the stuck PRIMARY
 		// does not have a winning position, and fail the ERS. If, on the other
 		// hand, it does have a winning position, we are trusting the operator
 		// to know what they are doing by emergency-reparenting onto that
@@ -449,7 +449,7 @@ func (erp *EmergencyReparenter) reparentReplicas(
 		replicaMutex               sync.Mutex
 	)
 
-	replCtx, replCancel := context.WithTimeout(ctx, opts.WaitReplicasTimeout)
+	replCtx, replCancel := context.WithTimeout(context.Background(), opts.WaitReplicasTimeout)
 
 	event.DispatchUpdate(ev, "reparenting all tablets")
 
@@ -499,7 +499,7 @@ func (erp *EmergencyReparenter) reparentReplicas(
 			forceStart = fs
 		}
 
-		err := erp.tmc.SetReplicationSource(replCtx, ti.Tablet, newPrimaryTablet.Alias, 0, "", forceStart)
+		err := erp.tmc.SetReplicationSource(replCtx, ti.Tablet, newPrimaryTablet.Alias, 0, "", forceStart, IsReplicaSemiSync(newPrimaryTablet, ti.Tablet))
 		if err != nil {
 			err = vterrors.Wrapf(err, "tablet %v SetReplicationSource failed: %v", alias, err)
 			rec.RecordError(err)
@@ -712,9 +712,16 @@ func (erp *EmergencyReparenter) promoteNewPrimary(
 	tabletMap map[string]*topo.TabletInfo,
 	statusMap map[string]*replicationdatapb.StopReplicationStatus,
 ) error {
-	erp.logger.Infof("starting promotion for the new primary - %v", newPrimary.Alias)
-	// we call PromoteReplica which changes the tablet type, fixes the semi-sync, set the primary to read-write and flushes the binlogs
-	_, err := erp.tmc.PromoteReplica(ctx, newPrimary)
+	var err error
+	if ev.ShardInfo.PrimaryAlias == nil {
+		erp.logger.Infof("setting up %v as new primary for an uninitialized cluster", newPrimary.Alias)
+		// we call InitPrimary when the PrimaryAlias in the ShardInfo is empty. This happens when we have an uninitialized cluster.
+		_, err = erp.tmc.InitPrimary(ctx, newPrimary, SemiSyncAckers(newPrimary) > 0)
+	} else {
+		erp.logger.Infof("starting promotion for the new primary - %v", newPrimary.Alias)
+		// we call PromoteReplica which changes the tablet type, fixes the semi-sync, set the primary to read-write and flushes the binlogs
+		_, err = erp.tmc.PromoteReplica(ctx, newPrimary, SemiSyncAckers(newPrimary) > 0)
+	}
 	if err != nil {
 		return vterrors.Wrapf(err, "primary-elect tablet %v failed to be upgraded to primary: %v", newPrimary.Alias, err)
 	}

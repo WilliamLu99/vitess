@@ -35,8 +35,12 @@ func (f *notImplementedSchemaInfoConverter) ColumnLookup(*sqlparser.ColName) (in
 	return 0, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "Comparing table schema name with a column name not yet supported")
 }
 
-func (f *notImplementedSchemaInfoConverter) CollationIDLookup(sqlparser.Expr) collations.ID {
-	return 0
+func (f *notImplementedSchemaInfoConverter) CollationForExpr(sqlparser.Expr) collations.ID {
+	return collations.Unknown
+}
+
+func (f *notImplementedSchemaInfoConverter) DefaultCollation() collations.ID {
+	return collations.Default()
 }
 
 func (pb *primitiveBuilder) findSysInfoRoutingPredicates(expr sqlparser.Expr, rut *route, reservedVars *sqlparser.ReservedVars) error {
@@ -58,29 +62,6 @@ func (pb *primitiveBuilder) findSysInfoRoutingPredicates(expr sqlparser.Expr, ru
 		rut.eroute.SysTableTableName[bvName] = out
 	}
 
-	return nil
-}
-
-func (rp *routeTree) findSysInfoRoutingPredicatesGen4(reservedVars *sqlparser.ReservedVars) error {
-	for _, pred := range rp.predicates {
-		isTableSchema, bvName, out, err := extractInfoSchemaRoutingPredicate(pred, reservedVars)
-		if err != nil {
-			return err
-		}
-		if out == nil {
-			// we didn't find a predicate to use for routing, continue to look for next predicate
-			continue
-		}
-
-		if isTableSchema {
-			rp.SysTableTableSchema = append(rp.SysTableTableSchema, out)
-		} else {
-			if rp.SysTableTableName == nil {
-				rp.SysTableTableName = map[string]evalengine.Expr{}
-			}
-			rp.SysTableTableName[bvName] = out
-		}
-	}
 	return nil
 }
 
@@ -121,9 +102,9 @@ func extractInfoSchemaRoutingPredicate(in sqlparser.Expr, reservedVars *sqlparse
 		if cmp.Operator == sqlparser.EqualOp {
 			isSchemaName, col, other, replaceOther := findOtherComparator(cmp)
 			if col != nil && shouldRewrite(other) {
-				evalExpr, err := evalengine.Convert(other, &notImplementedSchemaInfoConverter{})
+				evalExpr, err := evalengine.Translate(other, &notImplementedSchemaInfoConverter{})
 				if err != nil {
-					if strings.Contains(err.Error(), evalengine.ErrConvertExprNotSupported) {
+					if strings.Contains(err.Error(), evalengine.ErrTranslateExprNotSupported) {
 						// This just means we can't rewrite this particular expression,
 						// not that we have to exit altogether
 						return false, "", nil, nil

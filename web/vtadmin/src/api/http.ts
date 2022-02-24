@@ -19,6 +19,7 @@ import * as errorHandler from '../errors/errorHandler';
 import { HttpFetchError, HttpResponseNotOkError, MalformedHttpResponseError } from '../errors/errorTypes';
 import { HttpOkResponse } from './responseTypes';
 import { TabletDebugVars } from '../util/tabletDebugVars';
+import { isReadOnlyMode } from '../util/env';
 
 /**
  * vtfetch makes HTTP requests against the given vtadmin-api endpoint
@@ -32,6 +33,14 @@ import { TabletDebugVars } from '../util/tabletDebugVars';
  */
 export const vtfetch = async (endpoint: string, options: RequestInit = {}): Promise<HttpOkResponse> => {
     try {
+        if (isReadOnlyMode() && options.method && options.method.toLowerCase() !== 'get') {
+            // Any UI controls that ultimately trigger a write request should be hidden when in read-only mode,
+            // so getting to this point (where we actually execute a write request) is an error.
+            // So: we fail obnoxiously, as failing silently (e.g, logging and returning an empty "ok" response)
+            // could imply to the user that a write action succeeded.
+            throw new Error(`Cannot execute write request in read-only mode: ${options.method} ${endpoint}`);
+        }
+
         const { REACT_APP_VTADMIN_API_ADDRESS } = process.env;
         const url = `${REACT_APP_VTADMIN_API_ADDRESS}${endpoint}`;
         const opts = { ...vtfetchOpts(), ...options };
@@ -52,7 +61,7 @@ export const vtfetch = async (endpoint: string, options: RequestInit = {}): Prom
         try {
             json = await response.json();
         } catch (error) {
-            throw new MalformedHttpResponseError(error.message, endpoint, json, response);
+            throw new MalformedHttpResponseError((error as Error).message, endpoint, json, response);
         }
 
         if (!('ok' in json)) {
@@ -72,7 +81,7 @@ export const vtfetch = async (endpoint: string, options: RequestInit = {}): Prom
         // Instead, we catch errors and manually notify our error handling serivce(s),
         // and then rethrow the error for react-query to propagate the usual way.
         // See https://react-query.tanstack.com/guides/query-functions#handling-and-throwing-errors
-        errorHandler.notify(error);
+        errorHandler.notify(error as Error);
         throw error;
     }
 };
@@ -225,6 +234,34 @@ export const fetchTablet = async ({ clusterID, alias }: FetchTabletParams) => {
     return pb.Tablet.create(result);
 };
 
+export interface DeleteTabletParams {
+    clusterID: string;
+    alias: string;
+}
+
+export const deleteTablet = async ({ clusterID, alias }: DeleteTabletParams) => {
+    const { result } = await vtfetch(`/api/tablet/${alias}?cluster=${clusterID}`, { method: 'delete' });
+
+    const err = pb.DeleteTabletResponse.verify(result);
+    if (err) throw Error(err);
+
+    return pb.DeleteTabletResponse.create(result);
+};
+
+export interface ReparentTabletParams {
+    clusterID: string;
+    alias: string;
+}
+
+export const reparentTablet = async ({ clusterID, alias }: ReparentTabletParams) => {
+    const { result } = await vtfetch(`/api/tablet/${alias}/reparent`, { method: 'put' });
+
+    const err = pb.ReparentTabletResponse.verify(result);
+    if (err) throw Error(err);
+
+    return pb.ReparentTabletResponse.create(result);
+};
+
 export interface PingTabletParams {
     clusterID?: string;
     alias: string;
@@ -262,6 +299,58 @@ export const runHealthCheck = async ({ clusterID, alias }: RunHealthCheckParams)
     if (err) throw Error(err);
 
     return pb.RunHealthCheckResponse.create(result);
+};
+
+export interface SetReadOnlyParams {
+    clusterID?: string;
+    alias: string;
+}
+
+export const setReadOnly = async ({ clusterID, alias }: SetReadOnlyParams) => {
+    const { result } = await vtfetch(`/api/tablet/${alias}/set_read_only?cluster=${clusterID}`, { method: 'put' });
+    const err = pb.SetReadOnlyResponse.verify(result);
+    if (err) throw Error(err);
+
+    return pb.SetReadOnlyResponse.create(result);
+};
+
+export interface SetReadWriteParams {
+    clusterID?: string;
+    alias: string;
+}
+
+export const setReadWrite = async ({ clusterID, alias }: SetReadWriteParams) => {
+    const { result } = await vtfetch(`/api/tablet/${alias}/set_read_write?cluster=${clusterID}`, { method: 'put' });
+    const err = pb.SetReadWriteResponse.verify(result);
+    if (err) throw Error(err);
+
+    return pb.SetReadWriteResponse.create(result);
+};
+
+export interface StartReplicationParams {
+    clusterID?: string;
+    alias: string;
+}
+
+export const startReplication = async ({ clusterID, alias }: StartReplicationParams) => {
+    const { result } = await vtfetch(`/api/tablet/${alias}/start_replication?cluster=${clusterID}`, { method: 'put' });
+    const err = pb.StartReplicationResponse.verify(result);
+    if (err) throw Error(err);
+
+    return pb.StartReplicationResponse.create(result);
+};
+
+export interface StopReplicationParams {
+    clusterID?: string;
+    alias: string;
+}
+
+export const stopReplication = async ({ clusterID, alias }: StopReplicationParams) => {
+    const { result } = await vtfetch(`/api/tablet/${alias}/stop_replication?cluster=${clusterID}`, { method: 'put' });
+    const err = pb.StopReplicationResponse.verify(result);
+    if (err) throw Error(err);
+
+    return pb.StopReplicationResponse.create(result);
 };
 export interface TabletDebugVarsResponse {
     params: FetchTabletParams;

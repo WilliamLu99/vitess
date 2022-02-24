@@ -78,6 +78,10 @@ func (flv *filePosFlavor) stopIOThreadCommand() string {
 	return "unsupported"
 }
 
+func (flv *filePosFlavor) startSQLThreadCommand() string {
+	return "unsupported"
+}
+
 // sendBinlogDumpCommand is part of the Flavor interface.
 func (flv *filePosFlavor) sendBinlogDumpCommand(c *Conn, serverID uint32, startPos Position) error {
 	rpos, ok := startPos.GTIDSet.(filePosGTID)
@@ -108,7 +112,11 @@ func (flv *filePosFlavor) readBinlogEvent(c *Conn) (BinlogEvent, error) {
 			return nil, ParseErrorPacket(result)
 		}
 
-		event := &filePosBinlogEvent{binlogEvent: binlogEvent(result[1:])}
+		buf, semiSyncAckRequested, err := c.AnalyzeSemiSyncAckRequest(result[1:])
+		if err != nil {
+			return nil, err
+		}
+		event := newFilePosBinlogEventWithSemiSyncInfo(buf, semiSyncAckRequested)
 		switch event.Type() {
 		case eGTIDEvent, eAnonymousGTIDEvent, ePreviousGTIDsEvent, eMariaGTIDListEvent:
 			// Don't transmit fake or irrelevant events because we should not

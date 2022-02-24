@@ -296,6 +296,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "email_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select user_id, email, address, email = 'juan@vitess.io' from user_metadata where user_id = 1 for update",
@@ -331,6 +332,7 @@ Gen4 plan same as above
       "address_user_map:4",
       "email_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select user_id, email, address, email = 'juan@vitess.io', address = '155 5th street' from user_metadata where user_id = 1 for update",
@@ -360,6 +362,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "email_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select user_id, email, address, email = 'juan@vitess.io' from user_metadata where user_id = 1 order by user_id asc limit 10 for update",
@@ -434,6 +437,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` where id = 1 for update",
@@ -517,6 +521,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` as route1 where id = 1 for update",
@@ -624,6 +629,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select user_id, id from music where id = 1 for update",
@@ -823,7 +829,22 @@ Gen4 plan same as above
 
 # insert unsharded, invalid value for auto-inc
 "insert into unsharded_auto(id, val) values(18446744073709551616, 'aa')"
-"could not compute value for vindex or auto-inc column: strconv.ParseUint: parsing "18446744073709551616": value out of range"
+{
+  "QueryType": "INSERT",
+  "Original": "insert into unsharded_auto(id, val) values(18446744073709551616, 'aa')",
+  "Instructions": {
+    "OperatorType": "Insert",
+    "Variant": "Unsharded",
+    "Keyspace": {
+      "Name": "main",
+      "Sharded": false
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "insert into unsharded_auto(id, val) values (:__seq0, 'aa')",
+    "TableName": "unsharded_auto"
+  }
+}
 Gen4 plan same as above
 
 # insert unsharded, column present
@@ -1233,12 +1254,42 @@ Gen4 plan same as above
 
 # insert for non-vindex autoinc, invalid value
 "insert into user_extra(nonid, extra_id) values (2, 18446744073709551616)"
-"could not compute value for vindex or auto-inc column: strconv.ParseUint: parsing "18446744073709551616": value out of range"
+{
+  "QueryType": "INSERT",
+  "Original": "insert into user_extra(nonid, extra_id) values (2, 18446744073709551616)",
+  "Instructions": {
+    "OperatorType": "Insert",
+    "Variant": "Sharded",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "insert into user_extra(nonid, extra_id, user_id) values (2, :__seq0, :_user_id_0)",
+    "TableName": "user_extra"
+  }
+}
 Gen4 plan same as above
 
 # insert invalid index value
 "insert into music_extra(music_id, user_id) values(1, 18446744073709551616)"
-"could not compute value for vindex or auto-inc column: strconv.ParseUint: parsing "18446744073709551616": value out of range"
+{
+  "QueryType": "INSERT",
+  "Original": "insert into music_extra(music_id, user_id) values(1, 18446744073709551616)",
+  "Instructions": {
+    "OperatorType": "Insert",
+    "Variant": "Sharded",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "insert into music_extra(music_id, user_id) values (:_music_id_0, :_user_id_0)",
+    "TableName": "music_extra"
+  }
+}
 Gen4 plan same as above
 
 # insert invalid index value
@@ -1359,7 +1410,22 @@ Gen4 plan same as above
 
 # replace unsharded, invalid value for auto-inc
 "replace into unsharded_auto(id, val) values(18446744073709551616, 'aa')"
-"could not compute value for vindex or auto-inc column: strconv.ParseUint: parsing "18446744073709551616": value out of range"
+{
+  "QueryType": "INSERT",
+  "Original": "replace into unsharded_auto(id, val) values(18446744073709551616, 'aa')",
+  "Instructions": {
+    "OperatorType": "Insert",
+    "Variant": "Unsharded",
+    "Keyspace": {
+      "Name": "main",
+      "Sharded": false
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "replace into unsharded_auto(id, val) values (:__seq0, 'aa')",
+    "TableName": "unsharded_auto"
+  }
+}
 Gen4 plan same as above
 
 # replace unsharded, column present
@@ -1500,6 +1566,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "kid_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select kid, column_a, column_b, column_c from multicolvin where kid = 1 for update",
@@ -1529,6 +1596,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "colb_colc_map:4"
     ],
+    "KsidLength": 1,
     "KsidVindex": "kid_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select kid, column_a, column_b, column_c, column_b = 1 and column_c = 2 from multicolvin where kid = 1 for update",
@@ -1559,6 +1627,7 @@ Gen4 plan same as above
       "cola_map:4",
       "colb_colc_map:5"
     ],
+    "KsidLength": 1,
     "KsidVindex": "kid_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select kid, column_a, column_b, column_c, column_a = 0, column_b = 1 and column_c = 2 from multicolvin where kid = 1 for update",
@@ -1680,7 +1749,7 @@ Gen4 plan same as above
   "Original": "update user_extra set val = 1 where user_id in (1, 2)",
   "Instructions": {
     "OperatorType": "Update",
-    "Variant": "In",
+    "Variant": "IN",
     "Keyspace": {
       "Name": "user",
       "Sharded": true
@@ -1885,7 +1954,7 @@ Gen4 plan same as above
   "Original": "delete from user_extra where user_id in (1, 2)",
   "Instructions": {
     "OperatorType": "Delete",
-    "Variant": "In",
+    "Variant": "IN",
     "Keyspace": {
       "Name": "user",
       "Sharded": true
@@ -1956,6 +2025,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, `name` = null from `user` where id = 1 for update",
@@ -1996,7 +2066,7 @@ Gen4 plan same as above
   "Original": "update user set name = null where id in (1, 2, 3)",
   "Instructions": {
     "OperatorType": "Update",
-    "Variant": "In",
+    "Variant": "IN",
     "Keyspace": {
       "Name": "user",
       "Sharded": true
@@ -2005,6 +2075,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, `name` = null from `user` where id in (1, 2, 3) for update",
@@ -2034,6 +2105,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, `name` = null from `user` for update",
@@ -2059,6 +2131,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, `name` = null from `user` where id + 1 = 2 for update",
@@ -2075,12 +2148,13 @@ Gen4 plan same as above
   "Original": "delete from user where id in (1, 2, 3)",
   "Instructions": {
     "OperatorType": "Delete",
-    "Variant": "In",
+    "Variant": "IN",
     "Keyspace": {
       "Name": "user",
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` where id in (1, 2, 3) for update",
@@ -2107,6 +2181,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` where id + 1 = 2 for update",
@@ -2129,6 +2204,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` for update",
@@ -2151,6 +2227,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select user_id, id from music where id = 1 for update",
@@ -2197,6 +2274,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` for update",
@@ -2222,6 +2300,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "colb_colc_map:4"
     ],
+    "KsidLength": 1,
     "KsidVindex": "kid_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select kid, column_a, column_b, column_c, column_c = 2 from multicolvin where kid = 1 for update",
@@ -2251,6 +2330,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, `name` = _binary 'abc' from `user` where id = 1 for update",
@@ -2277,6 +2357,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` where `name` = _binary 'abc' for update",
@@ -2299,6 +2380,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` for update",
@@ -2324,6 +2406,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, `name` = 'myname' from `user` for update",
@@ -2366,6 +2449,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` where `user`.id * `user`.col = `user`.foo for update",
@@ -2422,6 +2506,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "xxhash",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select c1, c2, c3 from t1 where c2 = 20 for update",
@@ -2447,6 +2532,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "lookup_t1:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "xxhash",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select c1, c2, c3, c2 = 1 from t1 where c2 = 20 for update",
@@ -2469,6 +2555,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "xxhash",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select c1, c2, c3 from t1 where c2 = 10 and c3 = 20 for update",
@@ -2498,6 +2585,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "lookup_t1:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "xxhash",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select c1, c2, c3, c2 = 1 from t1 where c2 = 10 and c3 = 20 for update",
@@ -2518,12 +2606,13 @@ Gen4 plan same as above
   "Original": "delete from zlookup_unique.t1 where c2 = 10 and c3 in (20, 21)",
   "Instructions": {
     "OperatorType": "Delete",
-    "Variant": "In",
+    "Variant": "IN",
     "Keyspace": {
       "Name": "zlookup_unique",
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "xxhash",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select c1, c2, c3 from t1 where c2 = 10 and c3 in (20, 21) for update",
@@ -2544,7 +2633,7 @@ Gen4 plan same as above
   "Original": "update zlookup_unique.t1 set c2 = 1 where c2 = 10 and c3 in (20, 21)",
   "Instructions": {
     "OperatorType": "Update",
-    "Variant": "In",
+    "Variant": "IN",
     "Keyspace": {
       "Name": "zlookup_unique",
       "Sharded": true
@@ -2553,6 +2642,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "lookup_t1:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "xxhash",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select c1, c2, c3, c2 = 1 from t1 where c2 = 10 and c3 in (20, 21) for update",
@@ -2582,6 +2672,7 @@ Gen4 plan same as above
     "ChangedVindexValues": [
       "name_user_map:3"
     ],
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly, u.`name` = 'john' from `user` as u where u.col \u003e 20 for update",
@@ -2604,11 +2695,495 @@ Gen4 plan same as above
       "Sharded": true
     },
     "TargetTabletType": "PRIMARY",
+    "KsidLength": 1,
     "KsidVindex": "user_index",
     "MultiShardAutocommit": false,
     "OwnedVindexQuery": "select Id, `Name`, Costly from `user` as u where u.col \u003e 20 for update",
     "Query": "delete from `user` as u where u.col \u003e 20",
     "Table": "user"
+  }
+}
+Gen4 plan same as above
+
+# update with a multicol vindex
+"update multicol_tbl set x = 1 where cola = 1 and colb = 2"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 1 where cola = 1 and colb = 2",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 1 where cola = 1 and colb = 2",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with a multicol vindex - reverse order
+"update multicol_tbl set x = 1 where colb = 2 and cola = 1"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 1 where colb = 2 and cola = 1",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 1 where colb = 2 and cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with a multicol vindex using an IN clause
+"update multicol_tbl set x = 1 where colb IN (1,2) and cola = 1"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 1 where colb IN (1,2) and cola = 1",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 1 where colb in (1, 2) and cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "(INT64(1), INT64(2))"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with a multicol vindex using an IN clause
+"update multicol_tbl set x = 1 where colb IN (1,2) and cola IN (3,4)"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 1 where colb IN (1,2) and cola IN (3,4)",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 1 where colb in (1, 2) and cola in (3, 4)",
+    "Table": "multicol_tbl",
+    "Values": [
+      "(INT64(3), INT64(4))",
+      "(INT64(1), INT64(2))"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with a multicol vindex
+"delete from multicol_tbl where cola = 1 and colb = 2"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where cola = 1 and colb = 2",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where cola = 1 and colb = 2 for update",
+    "Query": "delete from multicol_tbl where cola = 1 and colb = 2",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with a multicol vindex - reverse order
+"delete from multicol_tbl where colb = 2 and cola = 1"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where colb = 2 and cola = 1",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where colb = 2 and cola = 1 for update",
+    "Query": "delete from multicol_tbl where colb = 2 and cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with a multicol vindex using an IN clause
+"delete from multicol_tbl where colb IN (1,2) and cola = 1"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where colb IN (1,2) and cola = 1",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where colb in (1, 2) and cola = 1 for update",
+    "Query": "delete from multicol_tbl where colb in (1, 2) and cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "(INT64(1), INT64(2))"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with a multicol vindex using an IN clause
+"delete from multicol_tbl where colb IN (1,2) and cola IN (3,4)"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where colb IN (1,2) and cola IN (3,4)",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where colb in (1, 2) and cola in (3, 4) for update",
+    "Query": "delete from multicol_tbl where colb in (1, 2) and cola in (3, 4)",
+    "Table": "multicol_tbl",
+    "Values": [
+      "(INT64(3), INT64(4))",
+      "(INT64(1), INT64(2))"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with multicol and an owned vindex which changes
+"update multicol_tbl set colc = 1 where cola = 1 and colb = 2"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set colc = 1 where cola = 1 and colb = 2",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "ChangedVindexValues": [
+      "colc_map:4"
+    ],
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name`, colc = 1 from multicol_tbl where cola = 1 and colb = 2 for update",
+    "Query": "update multicol_tbl set colc = 1 where cola = 1 and colb = 2",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)",
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with routing using non-unique lookup vindex
+"update multicol_tbl set x = 42 where name = 'foo'"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 42 where name = 'foo'",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 42 where `name` = 'foo'",
+    "Table": "multicol_tbl",
+    "Values": [
+      "VARCHAR(\"foo\")"
+    ],
+    "Vindex": "name_muticoltbl_map"
+  }
+}
+Gen4 plan same as above
+
+# update with routing using subsharding column
+"update multicol_tbl set x = 42 where cola = 1"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 42 where cola = 1",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 42 where cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with routing using subsharding column on lookup vindex
+"update multicol_tbl set name = 'bar' where cola = 1"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set name = 'bar' where cola = 1",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "ChangedVindexValues": [
+      "name_muticoltbl_map:4"
+    ],
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name`, `name` = 'bar' from multicol_tbl where cola = 1 for update",
+    "Query": "update multicol_tbl set `name` = 'bar' where cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with routing using subsharding column with in query
+"update multicol_tbl set name = 'bar' where cola in (1,2)"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set name = 'bar' where cola in (1,2)",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "ChangedVindexValues": [
+      "name_muticoltbl_map:4"
+    ],
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name`, `name` = 'bar' from multicol_tbl where cola in (1, 2) for update",
+    "Query": "update multicol_tbl set `name` = 'bar' where cola in (1, 2)",
+    "Table": "multicol_tbl",
+    "Values": [
+      "(INT64(1), INT64(2))"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# update with routing using subsharding column with in query as lower cost over lookup vindex
+"update multicol_tbl set x = 1 where name = 'foo' and cola = 2"
+{
+  "QueryType": "UPDATE",
+  "Original": "update multicol_tbl set x = 1 where name = 'foo' and cola = 2",
+  "Instructions": {
+    "OperatorType": "Update",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "MultiShardAutocommit": false,
+    "Query": "update multicol_tbl set x = 1 where `name` = 'foo' and cola = 2",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with routing using non-unique lookup vindex
+"delete from multicol_tbl where name = 'foo'"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where name = 'foo'",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where `name` = 'foo' for update",
+    "Query": "delete from multicol_tbl where `name` = 'foo'",
+    "Table": "multicol_tbl",
+    "Values": [
+      "VARCHAR(\"foo\")"
+    ],
+    "Vindex": "name_muticoltbl_map"
+  }
+}
+Gen4 plan same as above
+
+# delete with routing using subsharding column
+"delete from multicol_tbl where cola = 1"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where cola = 1",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where cola = 1 for update",
+    "Query": "delete from multicol_tbl where cola = 1",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(1)"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with routing using subsharding column with in query
+"delete from multicol_tbl where cola in (1,2)"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where cola in (1,2)",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where cola in (1, 2) for update",
+    "Query": "delete from multicol_tbl where cola in (1, 2)",
+    "Table": "multicol_tbl",
+    "Values": [
+      "(INT64(1), INT64(2))"
+    ],
+    "Vindex": "multicolIdx"
+  }
+}
+Gen4 plan same as above
+
+# delete with routing using subsharding column with in query as lower cost over lookup vindex
+"delete from multicol_tbl where name = 'foo' and cola = 2"
+{
+  "QueryType": "DELETE",
+  "Original": "delete from multicol_tbl where name = 'foo' and cola = 2",
+  "Instructions": {
+    "OperatorType": "Delete",
+    "Variant": "Equal",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "TargetTabletType": "PRIMARY",
+    "KsidLength": 2,
+    "KsidVindex": "multicolIdx",
+    "MultiShardAutocommit": false,
+    "OwnedVindexQuery": "select cola, colb, colc, `name` from multicol_tbl where `name` = 'foo' and cola = 2 for update",
+    "Query": "delete from multicol_tbl where `name` = 'foo' and cola = 2",
+    "Table": "multicol_tbl",
+    "Values": [
+      "INT64(2)"
+    ],
+    "Vindex": "multicolIdx"
   }
 }
 Gen4 plan same as above

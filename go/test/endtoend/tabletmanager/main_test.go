@@ -56,7 +56,8 @@ var (
 		id bigint,
 		value varchar(16),
 		primary key(id)
-	) Engine=InnoDB;
+	) Engine=InnoDB DEFAULT CHARSET=utf8;
+	CREATE VIEW v1 AS SELECT id, value FROM t1;
 `
 
 	vSchema = `
@@ -182,7 +183,7 @@ func tmcStopReplication(ctx context.Context, tabletGrpcPort int) error {
 
 func tmcStartReplication(ctx context.Context, tabletGrpcPort int) error {
 	vtablet := getTablet(tabletGrpcPort)
-	return tmClient.StartReplication(ctx, vtablet)
+	return tmClient.StartReplication(ctx, vtablet, false)
 }
 
 func tmcPrimaryPosition(ctx context.Context, tabletGrpcPort int) (string, error) {

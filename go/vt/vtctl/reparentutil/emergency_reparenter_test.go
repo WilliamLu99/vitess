@@ -204,6 +204,12 @@ func TestEmergencyReparenter_reparentShardLocked(t *testing.T) {
 				{
 					Keyspace: "testkeyspace",
 					Name:     "-",
+					Shard: &topodatapb.Shard{
+						PrimaryAlias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  100,
+						},
+					},
 				},
 			},
 			tablets: []*topodatapb.Tablet{
@@ -320,6 +326,12 @@ func TestEmergencyReparenter_reparentShardLocked(t *testing.T) {
 				{
 					Keyspace: "testkeyspace",
 					Name:     "-",
+					Shard: &topodatapb.Shard{
+						PrimaryAlias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  100,
+						},
+					},
 				},
 			},
 			tablets: []*topodatapb.Tablet{
@@ -957,6 +969,12 @@ func TestEmergencyReparenter_reparentShardLocked(t *testing.T) {
 				{
 					Keyspace: "testkeyspace",
 					Name:     "-",
+					Shard: &topodatapb.Shard{
+						PrimaryAlias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  100,
+						},
+					},
 				},
 			},
 			tablets: []*topodatapb.Tablet{
@@ -1068,6 +1086,12 @@ func TestEmergencyReparenter_reparentShardLocked(t *testing.T) {
 				{
 					Keyspace: "testkeyspace",
 					Name:     "-",
+					Shard: &topodatapb.Shard{
+						PrimaryAlias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  100,
+						},
+					},
 				},
 			},
 			tablets: []*topodatapb.Tablet{
@@ -1347,7 +1371,7 @@ func TestEmergencyReparenter_reparentShardLocked(t *testing.T) {
 		},
 	}
 
-	_ = SetDurabilityPolicy("none", nil)
+	_ = SetDurabilityPolicy("none")
 	for _, tt := range tests {
 		tt := tt
 
@@ -1411,6 +1435,7 @@ func TestEmergencyReparenter_promoteNewPrimary(t *testing.T) {
 		statusMap             map[string]*replicationdatapb.StopReplicationStatus
 		shouldErr             bool
 		errShouldContain      string
+		initializationTest    bool
 	}{
 		{
 			name:                 "success",
@@ -1789,6 +1814,93 @@ func TestEmergencyReparenter_promoteNewPrimary(t *testing.T) {
 			ts:        memorytopo.NewServer("zone1"),
 			shouldErr: false,
 		},
+		{
+			name:                 "success in initialization",
+			emergencyReparentOps: EmergencyReparentOptions{IgnoreReplicas: sets.NewString("zone1-0000000404")},
+			tmc: &testutil.TabletManagerClient{
+				PopulateReparentJournalResults: map[string]error{
+					"zone1-0000000100": nil,
+				},
+				PrimaryPositionResults: map[string]struct {
+					Position string
+					Error    error
+				}{
+					"zone1-0000000100": {
+						Error: nil,
+					},
+				},
+				InitPrimaryResults: map[string]struct {
+					Result string
+					Error  error
+				}{
+					"zone1-0000000100": {
+						Error: nil,
+					},
+				},
+				SetReplicationSourceResults: map[string]error{
+					"zone1-0000000101": nil,
+					"zone1-0000000102": nil,
+					"zone1-0000000404": assert.AnError, // okay, because we're ignoring it.
+				},
+			},
+			initializationTest:    true,
+			newPrimaryTabletAlias: "zone1-0000000100",
+			tabletMap: map[string]*topo.TabletInfo{
+				"zone1-0000000100": {
+					Tablet: &topodatapb.Tablet{
+						Alias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  100,
+						},
+						Hostname: "primary-elect",
+					},
+				},
+				"zone1-0000000101": {
+					Tablet: &topodatapb.Tablet{
+						Alias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  101,
+						},
+					},
+				},
+				"zone1-0000000102": {
+					Tablet: &topodatapb.Tablet{
+						Alias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  102,
+						},
+						Hostname: "requires force start",
+					},
+				},
+				"zone1-0000000404": {
+					Tablet: &topodatapb.Tablet{
+						Alias: &topodatapb.TabletAlias{
+							Cell: "zone1",
+							Uid:  404,
+						},
+						Hostname: "ignored tablet",
+					},
+				},
+			},
+			statusMap: map[string]*replicationdatapb.StopReplicationStatus{
+				"zone1-0000000101": { // forceStart = false
+					Before: &replicationdatapb.Status{
+						IoThreadRunning:  false,
+						SqlThreadRunning: false,
+					},
+				},
+				"zone1-0000000102": { // forceStart = true
+					Before: &replicationdatapb.Status{
+						IoThreadRunning:  true,
+						SqlThreadRunning: true,
+					},
+				},
+			},
+			keyspace:  "testkeyspace",
+			shard:     "-",
+			ts:        memorytopo.NewServer("zone1"),
+			shouldErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1799,7 +1911,17 @@ func TestEmergencyReparenter_promoteNewPrimary(t *testing.T) {
 
 			ctx := context.Background()
 			logger := logutil.NewMemoryLogger()
-			ev := &events.Reparent{}
+			ev := &events.Reparent{ShardInfo: topo.ShardInfo{
+				Shard: &topodatapb.Shard{
+					PrimaryAlias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+				},
+			}}
+			if tt.initializationTest {
+				ev.ShardInfo.PrimaryAlias = nil
+			}
 
 			testutil.AddShards(ctx, t, tt.ts, &vtctldatapb.Shard{
 				Keyspace: tt.keyspace,
@@ -2085,7 +2207,7 @@ func TestEmergencyReparenterCounters(t *testing.T) {
 	ersCounter.Set(0)
 	ersSuccessCounter.Set(0)
 	ersFailureCounter.Set(0)
-	_ = SetDurabilityPolicy("none", nil)
+	_ = SetDurabilityPolicy("none")
 
 	emergencyReparentOps := EmergencyReparentOptions{}
 	tmc := &testutil.TabletManagerClient{
@@ -2170,6 +2292,7 @@ func TestEmergencyReparenterCounters(t *testing.T) {
 				Cell: "zone1",
 				Uid:  100,
 			},
+			Type:     topodatapb.TabletType_PRIMARY,
 			Keyspace: "testkeyspace",
 			Shard:    "-",
 		},
@@ -2178,6 +2301,7 @@ func TestEmergencyReparenterCounters(t *testing.T) {
 				Cell: "zone1",
 				Uid:  101,
 			},
+			Type:     topodatapb.TabletType_REPLICA,
 			Keyspace: "testkeyspace",
 			Shard:    "-",
 		},
@@ -2186,6 +2310,7 @@ func TestEmergencyReparenterCounters(t *testing.T) {
 				Cell: "zone1",
 				Uid:  102,
 			},
+			Type:     topodatapb.TabletType_REPLICA,
 			Keyspace: "testkeyspace",
 			Shard:    "-",
 			Hostname: "most up-to-date position, wins election",
@@ -2198,13 +2323,11 @@ func TestEmergencyReparenterCounters(t *testing.T) {
 	ctx := context.Background()
 	logger := logutil.NewMemoryLogger()
 
-	for i, tablet := range tablets {
-		tablet.Type = topodatapb.TabletType_REPLICA
-		tablets[i] = tablet
-	}
-
 	testutil.AddShards(ctx, t, ts, shards...)
-	testutil.AddTablets(ctx, t, ts, nil, tablets...)
+	testutil.AddTablets(ctx, t, ts, &testutil.AddTabletOptions{
+		AlsoSetShardPrimary: true,
+		SkipShardCreation:   false,
+	}, tablets...)
 
 	erp := NewEmergencyReparenter(ts, tmc, logger)
 
@@ -2477,7 +2600,7 @@ func TestEmergencyReparenter_findMostAdvanced(t *testing.T) {
 		},
 	}
 
-	_ = SetDurabilityPolicy("none", nil)
+	_ = SetDurabilityPolicy("none")
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -2568,7 +2691,7 @@ func TestEmergencyReparenter_checkIfConstraintsSatisfied(t *testing.T) {
 		},
 	}
 
-	_ = SetDurabilityPolicy("none", nil)
+	_ = SetDurabilityPolicy("none")
 	erp := NewEmergencyReparenter(nil, nil, nil)
 
 	for _, testcase := range testcases {
@@ -3617,7 +3740,7 @@ func TestEmergencyReparenter_identifyPrimaryCandidate(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_ = SetDurabilityPolicy("none", nil)
+			_ = SetDurabilityPolicy("none")
 			logger := logutil.NewMemoryLogger()
 
 			erp := NewEmergencyReparenter(nil, nil, logger)
@@ -3630,4 +3753,80 @@ func TestEmergencyReparenter_identifyPrimaryCandidate(t *testing.T) {
 			assert.True(t, topoproto.TabletAliasEqual(res.Alias, test.result.Alias))
 		})
 	}
+}
+
+// TestParentContextCancelled tests that even if the parent context of reparentReplicas cancels, we should not cancel the context of
+// SetReplicationSource since there could be tablets that are running it even after ERS completes.
+func TestParentContextCancelled(t *testing.T) {
+	// Setup ERS options with a very high wait replicas timeout
+	emergencyReparentOps := EmergencyReparentOptions{IgnoreReplicas: sets.NewString("zone1-0000000404"), WaitReplicasTimeout: time.Minute}
+	// Make the replica tablet return its results after 3 seconds
+	tmc := &testutil.TabletManagerClient{
+		PrimaryPositionResults: map[string]struct {
+			Position string
+			Error    error
+		}{
+			"zone1-0000000100": {
+				Error: nil,
+			},
+		},
+		SetReplicationSourceResults: map[string]error{
+			"zone1-0000000101": nil,
+		},
+		SetReplicationSourceDelays: map[string]time.Duration{
+			"zone1-0000000101": 3 * time.Second,
+		},
+	}
+	newPrimaryTabletAlias := "zone1-0000000100"
+	tabletMap := map[string]*topo.TabletInfo{
+		"zone1-0000000100": {
+			Tablet: &topodatapb.Tablet{
+				Alias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  100,
+				},
+				Hostname: "primary-elect",
+			},
+		},
+		"zone1-0000000101": {
+			Tablet: &topodatapb.Tablet{
+				Alias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  101,
+				},
+			},
+		},
+	}
+	statusMap := map[string]*replicationdatapb.StopReplicationStatus{
+		"zone1-0000000101": {
+			Before: &replicationdatapb.Status{
+				IoThreadRunning:  true,
+				SqlThreadRunning: true,
+			},
+		},
+	}
+	keyspace := "testkeyspace"
+	shard := "-"
+	ts := memorytopo.NewServer("zone1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	logger := logutil.NewMemoryLogger()
+	ev := &events.Reparent{}
+
+	testutil.AddShards(ctx, t, ts, &vtctldatapb.Shard{
+		Keyspace: keyspace,
+		Name:     shard,
+	})
+
+	erp := NewEmergencyReparenter(ts, tmc, logger)
+	// Cancel the parent context after 1 second. Even though the parent context is cancelled, the command should still succeed
+	// We should not be cancelling the context of the RPC call to SetReplicationSource since some tablets may keep on running this even after
+	// ERS returns
+	go func() {
+		time.Sleep(time.Second)
+		cancel()
+	}()
+	_, err := erp.reparentReplicas(ctx, ev, tabletMap[newPrimaryTabletAlias].Tablet, tabletMap, statusMap, emergencyReparentOps, false, false)
+	require.NoError(t, err)
 }

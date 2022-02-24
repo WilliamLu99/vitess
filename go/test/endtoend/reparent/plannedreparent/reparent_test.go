@@ -33,7 +33,7 @@ import (
 
 func TestPrimaryToSpareStateChangeImpossible(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -45,7 +45,7 @@ func TestPrimaryToSpareStateChangeImpossible(t *testing.T) {
 
 func TestReparentCrossCell(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -59,7 +59,7 @@ func TestReparentCrossCell(t *testing.T) {
 
 func TestReparentGraceful(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -84,7 +84,7 @@ func TestReparentGraceful(t *testing.T) {
 // TestPRSWithDrainedLaggingTablet tests that PRS succeeds even if we have a lagging drained tablet
 func TestPRSWithDrainedLaggingTablet(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -111,7 +111,7 @@ func TestPRSWithDrainedLaggingTablet(t *testing.T) {
 
 func TestReparentReplicaOffline(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -121,14 +121,14 @@ func TestReparentReplicaOffline(t *testing.T) {
 	// Perform a graceful reparent operation.
 	out, err := utils.PrsWithTimeout(t, clusterInstance, tablets[1], false, "", "31s")
 	require.Error(t, err)
-	assert.Contains(t, out, fmt.Sprintf("tablet %s failed to SetReplicationSource", tablets[3].Alias))
+	assert.True(t, utils.SetReplicationSourceFailed(tablets[3], out))
 
 	utils.CheckPrimaryTablet(t, clusterInstance, tablets[1])
 }
 
 func TestReparentAvoid(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 	utils.DeleteTablet(t, clusterInstance, tablets[2])
@@ -160,14 +160,14 @@ func TestReparentAvoid(t *testing.T) {
 
 func TestReparentFromOutside(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	reparentFromOutside(t, clusterInstance, false)
 }
 
 func TestReparentFromOutsideWithNoPrimary(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -256,7 +256,7 @@ func reparentFromOutside(t *testing.T, clusterInstance *cluster.LocalProcessClus
 
 func TestReparentWithDownReplica(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -273,7 +273,7 @@ func TestReparentWithDownReplica(t *testing.T) {
 	// Perform a graceful reparent operation. It will fail as one tablet is down.
 	out, err := utils.Prs(t, clusterInstance, tablets[1])
 	require.Error(t, err)
-	assert.Contains(t, out, fmt.Sprintf("tablet %s failed to SetReplicationSource", tablets[2].Alias))
+	assert.True(t, utils.SetReplicationSourceFailed(tablets[2], out))
 
 	// insert data into the new primary, check the connected replica work
 	insertVal := utils.ConfirmReplication(t, tablets[1], []*cluster.Vttablet{tablets[0], tablets[3]})
@@ -287,6 +287,11 @@ func TestReparentWithDownReplica(t *testing.T) {
 	_, err = utils.Prs(t, clusterInstance, tablets[1])
 	require.NoError(t, err)
 
+	// We have to StartReplication on tablets[2] since the MySQL instance is restarted and does not have replication running
+	// We earlier used to rely on replicationManager to fix this but we have disabled it in our testing environment for latest versions of vttablet and vtctl.
+	err = clusterInstance.VtctlclientProcess.ExecuteCommand("StartReplication", tablets[2].Alias)
+	require.NoError(t, err)
+
 	// wait until it gets the data
 	err = utils.CheckInsertedValues(ctx, t, tablets[2], insertVal)
 	require.NoError(t, err)
@@ -294,7 +299,7 @@ func TestReparentWithDownReplica(t *testing.T) {
 
 func TestChangeTypeSemiSync(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 
@@ -358,7 +363,7 @@ func TestChangeTypeSemiSync(t *testing.T) {
 
 func TestReparentDoesntHangIfPrimaryFails(t *testing.T) {
 	defer cluster.PanicHandler(t)
-	clusterInstance := utils.SetupReparentCluster(t)
+	clusterInstance := utils.SetupReparentClusterLegacy(t, true)
 	defer utils.TeardownCluster(clusterInstance)
 	tablets := clusterInstance.Keyspaces[0].Shards[0].Vttablets
 

@@ -17,28 +17,27 @@ limitations under the License.
 package vtgate
 
 import (
+	"context"
 	"fmt"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	"vitess.io/vitess/go/vt/sqlparser"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"vitess.io/vitess/go/cache"
-	"vitess.io/vitess/go/test/utils"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-	"context"
-
-	"vitess.io/vitess/go/vt/vterrors"
-
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/test/utils"
 	"vitess.io/vitess/go/vt/discovery"
+	"vitess.io/vitess/go/vt/vterrors"
 	_ "vitess.io/vitess/go/vt/vtgate/vindexes"
 	"vitess.io/vitess/go/vt/vttablet/sandboxconn"
 
@@ -114,6 +113,265 @@ func TestSelectDBA(t *testing.T) {
 		BindVariables: map[string]*querypb.BindVariable{
 			"__vtschemaname": sqltypes.StringBindVariable("vt_ks"),
 		}}}
+	utils.MustMatch(t, wantQueries, sbc1.Queries)
+}
+
+func TestSystemVariablesMySQLBelow80(t *testing.T) {
+	executor, sbc1, _, _ := createExecutorEnv()
+	executor.normalize = true
+
+	sqlparser.MySQLVersion = "57000"
+
+	session := NewAutocommitSession(&vtgatepb.Session{EnableSetVar: true, EnableSystemSettings: true, TargetString: "TestExecutor"})
+
+	sbc1.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "orig", Type: sqltypes.VarChar},
+			{Name: "new", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar(""),
+			sqltypes.NewVarChar("only_full_group_by"),
+		}},
+	}})
+
+	_, err := executor.Execute(context.Background(), "TestSetStmt", session, "set @@sql_mode = only_full_group_by", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.True(t, session.InReservedConn())
+
+	wantQueries := []*querypb.BoundQuery{
+		{Sql: "select @@sql_mode orig, 'only_full_group_by' new"},
+		{Sql: "set @@sql_mode = 'only_full_group_by'", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+		{Sql: "select :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+	}
+
+	utils.MustMatch(t, wantQueries, sbc1.Queries)
+}
+
+func TestSystemVariablesWithSetVarDisabled(t *testing.T) {
+	executor, sbc1, _, _ := createExecutorEnv()
+	executor.normalize = true
+
+	sqlparser.MySQLVersion = "80000"
+
+	session := NewAutocommitSession(&vtgatepb.Session{EnableSetVar: false, EnableSystemSettings: true, TargetString: "TestExecutor"})
+
+	sbc1.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "orig", Type: sqltypes.VarChar},
+			{Name: "new", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar(""),
+			sqltypes.NewVarChar("only_full_group_by"),
+		}},
+	}})
+
+	_, err := executor.Execute(context.Background(), "TestSetStmt", session, "set @@sql_mode = only_full_group_by", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.True(t, session.InReservedConn())
+
+	wantQueries := []*querypb.BoundQuery{
+		{Sql: "select @@sql_mode orig, 'only_full_group_by' new"},
+		{Sql: "set @@sql_mode = 'only_full_group_by'", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+		{Sql: "select :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+	}
+
+	utils.MustMatch(t, wantQueries, sbc1.Queries)
+}
+
+func TestSetSystemVariablesTx(t *testing.T) {
+	executor, sbc1, _, _ := createExecutorEnv()
+	executor.normalize = true
+
+	sqlparser.MySQLVersion = "80001"
+
+	session := NewAutocommitSession(&vtgatepb.Session{EnableSetVar: true, EnableSystemSettings: true, TargetString: "TestExecutor"})
+
+	_, err := executor.Execute(context.Background(), "TestBegin", session, "begin", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.NotZero(t, session.ShardSessions)
+
+	sbc1.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "orig", Type: sqltypes.VarChar},
+			{Name: "new", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar(""),
+			sqltypes.NewVarChar("only_full_group_by"),
+		}},
+	}})
+
+	_, err = executor.Execute(context.Background(), "TestSetStmt", session, "set @@sql_mode = only_full_group_by", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+
+	_, err = executor.Execute(context.Background(), "TestCommit", session, "commit", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+
+	require.Zero(t, session.ShardSessions)
+
+	wantQueries := []*querypb.BoundQuery{
+		{Sql: "select :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+		{Sql: "select @@sql_mode orig, 'only_full_group_by' new"},
+		{Sql: "select /*+ SET_VAR(sql_mode = 'only_full_group_by') */ :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+	}
+
+	utils.MustMatch(t, wantQueries, sbc1.Queries)
+}
+
+func TestSetSystemVariables(t *testing.T) {
+	executor, _, _, lookup := createExecutorEnv()
+	executor.normalize = true
+
+	sqlparser.MySQLVersion = "80001"
+
+	session := NewAutocommitSession(&vtgatepb.Session{EnableSetVar: true, EnableSystemSettings: true, TargetString: KsTestUnsharded, SystemVariables: map[string]string{}})
+
+	// Set @@sql_mode and execute a select statement. We should have SET_VAR in the select statement
+
+	lookup.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "orig", Type: sqltypes.VarChar},
+			{Name: "new", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar(""),
+			sqltypes.NewVarChar("only_full_group_by"),
+		}},
+	}})
+	_, err := executor.Execute(context.Background(), "TestSetStmt", session, "set @@sql_mode = only_full_group_by", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+	wantQueries := []*querypb.BoundQuery{
+		{Sql: "select @@sql_mode orig, 'only_full_group_by' new"},
+		{Sql: "select /*+ SET_VAR(sql_mode = 'only_full_group_by') */ :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+	}
+	utils.MustMatch(t, wantQueries, lookup.Queries)
+	lookup.Queries = nil
+
+	// Execute a select with a comment that needs a query hint
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select /* comment */ 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+	wantQueries = []*querypb.BoundQuery{
+		{Sql: "select /*+ SET_VAR(sql_mode = 'only_full_group_by') */ /* comment */ :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+	}
+	utils.MustMatch(t, wantQueries, lookup.Queries)
+	lookup.Queries = nil
+
+	lookup.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "sql_safe_updates", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar("0"),
+		}},
+	}})
+	_, err = executor.Execute(context.Background(), "TestSetStmt", session, "set @@sql_safe_updates = 0", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+	wantQueries = []*querypb.BoundQuery{
+		{Sql: "select 0 from dual where @@sql_safe_updates != 0"},
+	}
+	utils.MustMatch(t, wantQueries, lookup.Queries)
+	lookup.Queries = nil
+
+	_, err = executor.Execute(context.Background(), "TestSetStmt", session, "set @var = @@sql_mode", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+	require.Nil(t, lookup.Queries)
+	require.Equal(t, "only_full_group_by", string(session.UserDefinedVariables["var"].GetValue()))
+
+	lookup.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "max_tmp_tables", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar("4"),
+		}},
+	}})
+	_, err = executor.Execute(context.Background(), "TestSetStmt", session, "set @x = @@sql_mode, @y = @@max_tmp_tables", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.False(t, session.InReservedConn())
+	wantQueries = []*querypb.BoundQuery{
+		{Sql: "select @@max_tmp_tables from dual", BindVariables: map[string]*querypb.BindVariable{"__vtsql_mode": sqltypes.StringBindVariable("only_full_group_by")}},
+	}
+	utils.MustMatch(t, wantQueries, lookup.Queries)
+	require.Equal(t, "only_full_group_by", string(session.UserDefinedVariables["var"].GetValue()))
+	require.Equal(t, "only_full_group_by", string(session.UserDefinedVariables["x"].GetValue()))
+	require.Equal(t, "4", string(session.UserDefinedVariables["y"].GetValue()))
+	lookup.Queries = nil
+
+	// Set system variable that is not supported by SET_VAR
+	// We expect the next select to not have any SET_VAR query hint, instead it will use set statements
+
+	lookup.SetResults([]*sqltypes.Result{{
+		Fields: []*querypb.Field{
+			{Name: "max_tmp_tables", Type: sqltypes.VarChar},
+		},
+		Rows: [][]sqltypes.Value{{
+			sqltypes.NewVarChar("1"),
+		}},
+	}})
+	_, err = executor.Execute(context.Background(), "TestSetStmt", session, "set @@max_tmp_tables = 1", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.True(t, session.InReservedConn())
+
+	_, err = executor.Execute(context.Background(), "TestSelect", session, "select 1 from information_schema.table", map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+
+	wantQueries = []*querypb.BoundQuery{
+		{Sql: "select 1 from dual where @@max_tmp_tables != 1"},
+		{Sql: "set @@sql_mode = 'only_full_group_by'", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+		{Sql: "set @@sql_safe_updates = '0'", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+		{Sql: "set @@max_tmp_tables = '1'", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+		{Sql: "select :vtg1 from information_schema.`table`", BindVariables: map[string]*querypb.BindVariable{"vtg1": {Type: sqltypes.Int64, Value: []byte("1")}}},
+	}
+
+	sort.Slice(wantQueries, func(i, j int) bool {
+		return wantQueries[i].Sql < wantQueries[j].Sql
+	})
+	sort.Slice(lookup.Queries, func(i, j int) bool {
+		return lookup.Queries[i].Sql < lookup.Queries[j].Sql
+	})
+	utils.MustMatch(t, wantQueries, lookup.Queries)
+}
+
+func TestCreateTableValidTimestamp(t *testing.T) {
+	executor, sbc1, _, _ := createExecutorEnv()
+	executor.normalize = true
+
+	session := NewSafeSession(&vtgatepb.Session{TargetString: "TestExecutor", SystemVariables: map[string]string{"sql_mode": "ALLOW_INVALID_DATES"}})
+
+	query := "create table aa(t timestamp default 0)"
+	_, err := executor.Execute(context.Background(), "TestSelect", session, query, map[string]*querypb.BindVariable{})
+	require.NoError(t, err)
+	require.True(t, session.InReservedConn())
+
+	wantQueries := []*querypb.BoundQuery{
+		{Sql: "set @@sql_mode = ALLOW_INVALID_DATES", BindVariables: map[string]*querypb.BindVariable{}},
+		{Sql: "create table aa (\n\tt timestamp default 0\n)", BindVariables: map[string]*querypb.BindVariable{}},
+	}
+
 	utils.MustMatch(t, wantQueries, sbc1.Queries)
 }
 
@@ -436,13 +694,13 @@ func TestSelectSystemVariables(t *testing.T) {
 			{Name: "@@skip_query_plan_cache", Type: sqltypes.Int64},
 			{Name: "@@enable_system_settings", Type: sqltypes.Int64},
 			{Name: "@@sql_select_limit", Type: sqltypes.Int64},
-			{Name: "@@transaction_mode", Type: sqltypes.VarBinary},
-			{Name: "@@workload", Type: sqltypes.VarBinary},
-			{Name: "@@read_after_write_gtid", Type: sqltypes.VarBinary},
+			{Name: "@@transaction_mode", Type: sqltypes.VarChar},
+			{Name: "@@workload", Type: sqltypes.VarChar},
+			{Name: "@@read_after_write_gtid", Type: sqltypes.VarChar},
 			{Name: "@@read_after_write_timeout", Type: sqltypes.Float64},
-			{Name: "@@session_track_gtids", Type: sqltypes.VarBinary},
-			{Name: "@@ddl_strategy", Type: sqltypes.VarBinary},
-			{Name: "@@socket", Type: sqltypes.VarBinary},
+			{Name: "@@session_track_gtids", Type: sqltypes.VarChar},
+			{Name: "@@ddl_strategy", Type: sqltypes.VarChar},
+			{Name: "@@socket", Type: sqltypes.VarChar},
 		},
 		Rows: [][]sqltypes.Value{{
 			// the following are the uninitialised session values
@@ -451,14 +709,14 @@ func TestSelectSystemVariables(t *testing.T) {
 			sqltypes.NewInt64(0),
 			sqltypes.NewInt64(0),
 			sqltypes.NewInt64(0),
-			sqltypes.NewVarBinary("UNSPECIFIED"),
-			sqltypes.NewVarBinary(""),
+			sqltypes.NewVarChar("UNSPECIFIED"),
+			sqltypes.NewVarChar(""),
 			// these have been set at the beginning of the test
-			sqltypes.NewVarBinary("a fine gtid"),
+			sqltypes.NewVarChar("a fine gtid"),
 			sqltypes.NewFloat64(13),
-			sqltypes.NewVarBinary("own_gtid"),
-			sqltypes.NewVarBinary(""),
-			sqltypes.NewVarBinary(""),
+			sqltypes.NewVarChar("own_gtid"),
+			sqltypes.NewVarChar(""),
+			sqltypes.NewVarChar(""),
 		}},
 	}
 	require.NoError(t, err)
@@ -520,10 +778,10 @@ func TestSelectUserDefindVariable(t *testing.T) {
 	require.NoError(t, err)
 	wantResult = &sqltypes.Result{
 		Fields: []*querypb.Field{
-			{Name: "@foo", Type: sqltypes.VarBinary},
+			{Name: "@foo", Type: sqltypes.VarChar},
 		},
 		Rows: [][]sqltypes.Value{{
-			sqltypes.NewVarBinary("bar"),
+			sqltypes.NewVarChar("bar"),
 		}},
 	}
 	utils.MustMatch(t, wantResult, result, "Mismatch")
@@ -674,10 +932,10 @@ func TestSelectDatabase(t *testing.T) {
 		map[string]*querypb.BindVariable{})
 	wantResult := &sqltypes.Result{
 		Fields: []*querypb.Field{
-			{Name: "database()", Type: sqltypes.VarBinary},
+			{Name: "database()", Type: sqltypes.VarChar},
 		},
 		Rows: [][]sqltypes.Value{{
-			sqltypes.NewVarBinary("TestExecutor@primary"),
+			sqltypes.NewVarChar("TestExecutor@primary"),
 		}},
 	}
 	require.NoError(t, err)
@@ -715,15 +973,15 @@ func TestSelectBindvars(t *testing.T) {
 	// Test with StringBindVariable
 	sql = "select id from user where name in (:name1, :name2)"
 	_, err = executorExec(executor, sql, map[string]*querypb.BindVariable{
-		"name1": sqltypes.BytesBindVariable([]byte("foo1")),
-		"name2": sqltypes.BytesBindVariable([]byte("foo2")),
+		"name1": sqltypes.StringBindVariable("foo1"),
+		"name2": sqltypes.StringBindVariable("foo2"),
 	})
 	require.NoError(t, err)
 	wantQueries = []*querypb.BoundQuery{{
 		Sql: "select id from `user` where `name` in ::__vals",
 		BindVariables: map[string]*querypb.BindVariable{
-			"name1":  sqltypes.BytesBindVariable([]byte("foo1")),
-			"name2":  sqltypes.BytesBindVariable([]byte("foo2")),
+			"name1":  sqltypes.StringBindVariable("foo1"),
+			"name2":  sqltypes.StringBindVariable("foo2"),
 			"__vals": sqltypes.TestBindVariable([]interface{}{"foo1", "foo2"}),
 		},
 	}}
@@ -779,7 +1037,7 @@ func TestSelectBindvars(t *testing.T) {
 	}}
 	utils.MustMatch(t, wantQueries, sbc1.Queries)
 
-	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarBinary("nonexistent")})
+	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarChar("nonexistent")})
 	require.NoError(t, err)
 	wantLookupQueries := []*querypb.BoundQuery{{
 		Sql: "select `name`, user_id from name_user_map where `name` in ::name",
@@ -851,7 +1109,7 @@ func TestSelectEqual(t *testing.T) {
 		BindVariables: map[string]*querypb.BindVariable{},
 	}}
 	utils.MustMatch(t, wantQueries, sbc1.Queries)
-	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarBinary("foo")})
+	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarChar("foo")})
 	require.NoError(t, err)
 	wantQueries = []*querypb.BoundQuery{{
 		Sql: "select `name`, user_id from name_user_map where `name` in ::name",
@@ -1065,7 +1323,7 @@ func TestSelectIN(t *testing.T) {
 		BindVariables: map[string]*querypb.BindVariable{},
 	}}
 	utils.MustMatch(t, wantQueries, sbc1.Queries)
-	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarBinary("foo")})
+	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarChar("foo")})
 	require.NoError(t, err)
 	wantQueries = []*querypb.BoundQuery{{
 		Sql: "select `name`, user_id from name_user_map where `name` in ::name",
@@ -1110,7 +1368,7 @@ func TestStreamSelectIN(t *testing.T) {
 		t.Errorf("result: %+v, want %+v", result, wantResult)
 	}
 
-	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarBinary("foo")})
+	vars, err := sqltypes.BuildBindVariable([]interface{}{sqltypes.NewVarChar("foo")})
 	require.NoError(t, err)
 	wantQueries := []*querypb.BoundQuery{{
 		Sql: "select `name`, user_id from name_user_map where `name` in ::name",
@@ -2032,13 +2290,13 @@ func TestLeftJoin(t *testing.T) {
 	defer QueryLogger.Unsubscribe(logChan)
 	result1 := []*sqltypes.Result{{
 		Fields: []*querypb.Field{
-			{Name: "id", Type: sqltypes.Int32},
 			{Name: "col", Type: sqltypes.Int32},
+			{Name: "id", Type: sqltypes.Int32},
 		},
 		InsertID: 0,
 		Rows: [][]sqltypes.Value{{
-			sqltypes.NewInt32(1),
 			sqltypes.NewInt32(3),
+			sqltypes.NewInt32(1),
 		}},
 	}}
 	emptyResult := []*sqltypes.Result{{
@@ -2064,7 +2322,7 @@ func TestLeftJoin(t *testing.T) {
 		},
 	}
 	if !result.Equal(wantResult) {
-		t.Errorf("result: %+v, want %+v", result, wantResult)
+		t.Errorf("result: \n%+v, want \n%+v", result, wantResult)
 	}
 	testQueryLog(t, logChan, "TestExecute", "SELECT", sql, 2)
 }
@@ -2073,13 +2331,13 @@ func TestLeftJoinStream(t *testing.T) {
 	executor, sbc1, sbc2, _ := createLegacyExecutorEnv()
 	result1 := []*sqltypes.Result{{
 		Fields: []*querypb.Field{
-			{Name: "id", Type: sqltypes.Int32},
 			{Name: "col", Type: sqltypes.Int32},
+			{Name: "id", Type: sqltypes.Int32},
 		},
 		InsertID: 0,
 		Rows: [][]sqltypes.Value{{
-			sqltypes.NewInt32(1),
 			sqltypes.NewInt32(3),
+			sqltypes.NewInt32(1),
 		}},
 	}}
 	emptyResult := []*sqltypes.Result{{
@@ -2929,4 +3187,186 @@ func TestGen4MultiColMultiEqual(t *testing.T) {
 	}
 	require.Nil(t, sbc1.Queries)
 	utils.MustMatch(t, wantQueries, sbc2.Queries)
+}
+
+func TestRegionRange(t *testing.T) {
+	// Special setup: Don't use createLegacyExecutorEnv.
+
+	*GatewayImplementation = tabletGatewayImplementation
+	*plannerVersion = "gen4"
+	defer func() {
+		*plannerVersion = "v3"
+	}()
+	cell := "regioncell"
+	ks := "TestExecutor"
+	hc := discovery.NewFakeHealthCheck(nil)
+	s := createSandbox(ks)
+	s.ShardSpec = "-20-20a0-"
+	s.VSchema = executorVSchema
+	serv := newSandboxForCells([]string{cell})
+	resolver := newTestResolver(hc, serv, cell)
+	shards := []string{"-20", "20-20a0", "20a0-"}
+	var conns []*sandboxconn.SandboxConn
+	for _, shard := range shards {
+		sbc := hc.AddTestTablet(cell, shard, 1, ks, shard, topodatapb.TabletType_PRIMARY, true, 1, nil)
+		conns = append(conns, sbc)
+	}
+	executor := createExecutor(serv, cell, resolver)
+
+	tcases := []struct {
+		regionID          int
+		noOfShardsTouched int
+	}{{
+		regionID:          31,
+		noOfShardsTouched: 1,
+	}, {
+		regionID:          32,
+		noOfShardsTouched: 2,
+	}, {
+		regionID:          33,
+		noOfShardsTouched: 1,
+	}}
+	for _, tcase := range tcases {
+		t.Run(strconv.Itoa(tcase.regionID), func(t *testing.T) {
+			sql := fmt.Sprintf("select * from user_region where cola = %d", tcase.regionID)
+			_, err := executor.Execute(
+				context.Background(),
+				"TestRegionRange",
+				NewAutocommitSession(&vtgatepb.Session{}),
+				sql,
+				nil)
+			require.NoError(t, err)
+			count := 0
+			for _, sbc := range conns {
+				count = count + len(sbc.Queries)
+				sbc.Queries = nil
+			}
+			require.Equal(t, tcase.noOfShardsTouched, count)
+		})
+	}
+}
+
+func TestMultiCol(t *testing.T) {
+	// Special setup: Don't use createLegacyExecutorEnv.
+
+	*GatewayImplementation = tabletGatewayImplementation
+	*plannerVersion = "gen4"
+	defer func() {
+		*plannerVersion = "v3"
+	}()
+	cell := "multicol"
+	ks := "TestExecutor"
+	hc := discovery.NewFakeHealthCheck(nil)
+	s := createSandbox(ks)
+	s.ShardSpec = "-20-20a0-"
+	s.VSchema = executorVSchema
+	serv := newSandboxForCells([]string{cell})
+	resolver := newTestResolver(hc, serv, cell)
+	shards := []string{"-20", "20-20a0", "20a0-"}
+	var conns []*sandboxconn.SandboxConn
+	for _, shard := range shards {
+		sbc := hc.AddTestTablet(cell, shard, 1, ks, shard, topodatapb.TabletType_PRIMARY, true, 1, nil)
+		conns = append(conns, sbc)
+	}
+	executor := createExecutor(serv, cell, resolver)
+
+	tcases := []struct {
+		cola, colb, colc int
+		shards           []string
+	}{{
+		cola: 202, colb: 1, colc: 1,
+		shards: []string{"-20"},
+	}, {
+		cola: 203, colb: 1, colc: 1,
+		shards: []string{"20-20a0"},
+	}, {
+		cola: 204, colb: 1, colc: 1,
+		shards: []string{"20a0-"},
+	}}
+
+	ctx := context.Background()
+	session := NewAutocommitSession(&vtgatepb.Session{})
+
+	for _, tcase := range tcases {
+		t.Run(fmt.Sprintf("%d_%d_%d", tcase.cola, tcase.colb, tcase.colc), func(t *testing.T) {
+			sql := fmt.Sprintf("select * from multicoltbl where cola = %d and colb = %d and colc = '%d'", tcase.cola, tcase.colb, tcase.colc)
+			_, err := executor.Execute(ctx, "TestMultiCol", session, sql, nil)
+			require.NoError(t, err)
+			var shards []string
+			for _, sbc := range conns {
+				if len(sbc.Queries) > 0 {
+					shards = append(shards, sbc.Tablet().Shard)
+					sbc.Queries = nil
+				}
+			}
+			require.Equal(t, tcase.shards, shards)
+		})
+	}
+}
+
+func TestMultiColPartial(t *testing.T) {
+	// Special setup: Don't use createLegacyExecutorEnv.
+
+	*GatewayImplementation = tabletGatewayImplementation
+	*plannerVersion = "gen4"
+	defer func() {
+		*plannerVersion = "v3"
+	}()
+	cell := "multicol"
+	ks := "TestExecutor"
+	hc := discovery.NewFakeHealthCheck(nil)
+	s := createSandbox(ks)
+	s.ShardSpec = "-20-20a0c0-"
+	s.VSchema = executorVSchema
+	serv := newSandboxForCells([]string{cell})
+	resolver := newTestResolver(hc, serv, cell)
+	shards := []string{"-20", "20-20a0c0", "20a0c0-"}
+	var conns []*sandboxconn.SandboxConn
+	for _, shard := range shards {
+		sbc := hc.AddTestTablet(cell, shard, 1, ks, shard, topodatapb.TabletType_PRIMARY, true, 1, nil)
+		conns = append(conns, sbc)
+	}
+	executor := createExecutor(serv, cell, resolver)
+
+	tcases := []struct {
+		where  string
+		shards []string
+	}{{
+		where:  "cola = 252",
+		shards: []string{"-20"},
+	}, {
+		where:  "cola = 289",
+		shards: []string{"20a0c0-"},
+	}, {
+		where:  "cola = 606",
+		shards: []string{"20-20a0c0", "20a0c0-"},
+	}, {
+		where:  "cola = 606 and colb = _binary '\x1f'",
+		shards: []string{"20-20a0c0"},
+	}, {
+		where:  "cola = 606 and colb = _binary '\xa0'",
+		shards: []string{"20-20a0c0", "20a0c0-"},
+	}, {
+		where:  "cola = 606 and colb = _binary '\xa1'",
+		shards: []string{"20a0c0-"},
+	}}
+
+	ctx := context.Background()
+	session := NewAutocommitSession(&vtgatepb.Session{})
+
+	for _, tcase := range tcases {
+		t.Run(tcase.where, func(t *testing.T) {
+			sql := fmt.Sprintf("select * from multicoltbl where %s", tcase.where)
+			_, err := executor.Execute(ctx, "TestMultiCol", session, sql, nil)
+			require.NoError(t, err)
+			var shards []string
+			for _, sbc := range conns {
+				if len(sbc.Queries) > 0 {
+					shards = append(shards, sbc.Tablet().Shard)
+					sbc.Queries = nil
+				}
+			}
+			require.Equal(t, tcase.shards, shards)
+		})
+	}
 }

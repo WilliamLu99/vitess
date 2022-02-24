@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -244,18 +243,16 @@ func (v Value) RawStr() string {
 // match MySQL's representation for hex encoded binary data or newer types.
 // If the value is not convertible like in the case of Expression, it returns an error.
 func (v Value) ToBytes() ([]byte, error) {
-	if v.typ == Expression {
+	switch v.typ {
+	case Expression:
 		return nil, vterrors.New(vtrpcpb.Code_INVALID_ARGUMENT, "expression cannot be converted to bytes")
+	case HexVal:
+		return v.decodeHexVal()
+	case HexNum:
+		return v.decodeHexNum()
+	default:
+		return v.val, nil
 	}
-	if v.typ == HexVal {
-		dv, err := v.decodeHexVal()
-		return dv, err
-	}
-	if v.typ == HexNum {
-		dv, err := v.decodeHexNum()
-		return dv, err
-	}
-	return v.val, nil
 }
 
 // Len returns the length.
@@ -486,8 +483,7 @@ func (v *Value) UnmarshalJSON(b []byte) error {
 // array matching what MySQL would return when querying the column where
 // an INSERT was performed with x'A1' having been specified as a value
 func (v *Value) decodeHexVal() ([]byte, error) {
-	match, err := regexp.Match("^x'.*'$", v.val)
-	if !match || err != nil {
+	if len(v.val) < 3 || (v.val[0] != 'x' && v.val[0] != 'X') || v.val[1] != '\'' || v.val[len(v.val)-1] != '\'' {
 		return nil, vterrors.Errorf(vtrpc.Code_INVALID_ARGUMENT, "invalid hex value: %v", v.val)
 	}
 	hexBytes := v.val[2 : len(v.val)-1]
@@ -502,8 +498,7 @@ func (v *Value) decodeHexVal() ([]byte, error) {
 // array matching what MySQL would return when querying the column where
 // an INSERT was performed with 0xA1 having been specified as a value
 func (v *Value) decodeHexNum() ([]byte, error) {
-	match, err := regexp.Match("^0x.*$", v.val)
-	if !match || err != nil {
+	if len(v.val) < 3 || v.val[0] != '0' || v.val[1] != 'x' {
 		return nil, vterrors.Errorf(vtrpc.Code_INVALID_ARGUMENT, "invalid hex number: %v", v.val)
 	}
 	hexBytes := v.val[2:]

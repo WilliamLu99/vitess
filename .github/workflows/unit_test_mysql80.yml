@@ -19,6 +19,9 @@ jobs:
     - name: Tune the OS
       run: |
         echo '1024 65535' | sudo tee -a /proc/sys/net/ipv4/ip_local_port_range
+        # Increase the asynchronous non-blocking I/O. More information at https://dev.mysql.com/doc/refman/5.7/en/innodb-parameters.html#sysvar_innodb_use_native_aio
+        echo "fs.aio-max-nr = 1048576" | sudo tee -a /etc/sysctl.conf
+        sudo sysctl -p /etc/sysctl.conf
 
     - name: Check out code
       uses: actions/checkout@v2
@@ -38,6 +41,9 @@ jobs:
         sudo deluser mysql
         sudo rm -rf /var/lib/mysql
         sudo rm -rf /etc/mysql
+
+        # Get key to latest MySQL repo
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 467B942D3A79BD29
 
         # mysql80
         wget -c https://dev.mysql.com/get/mysql-apt-config_0.8.14-1_all.deb

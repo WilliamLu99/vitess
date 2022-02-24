@@ -44,6 +44,7 @@ import (
 
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	vtgatepb "vitess.io/vitess/go/vt/proto/vtgate"
+	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 
 	"github.com/google/uuid"
 )
@@ -83,6 +84,7 @@ var (
 // vtgateHandler implements the Listener interface.
 // It stores the Session in the ClientData of a Connection.
 type vtgateHandler struct {
+	mysql.UnimplementedHandler
 	mu sync.Mutex
 
 	vtg         *VTGate
@@ -336,6 +338,11 @@ func (vh *vtgateHandler) WarningCount(c *mysql.Conn) uint16 {
 	return uint16(len(vh.session(c).GetWarnings()))
 }
 
+// ComBinlogDumpGTID is part of the mysql.Handler interface.
+func (vh *vtgateHandler) ComBinlogDumpGTID(c *mysql.Conn, gtidSet mysql.GTIDSet) error {
+	return vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "ComBinlogDumpGTID")
+}
+
 func (vh *vtgateHandler) session(c *mysql.Conn) *vtgatepb.Session {
 	session, _ := c.ClientData.(*vtgatepb.Session)
 	if session == nil {
@@ -351,6 +358,7 @@ func (vh *vtgateHandler) session(c *mysql.Conn) *vtgatepb.Session {
 			DDLStrategy:          *defaultDDLStrategy,
 			SessionUUID:          u.String(),
 			EnableSystemSettings: *sysVarSetEnabled,
+			EnableSetVar:         *setVarEnabled,
 		}
 		if c.Capabilities&mysql.CapabilityClientFoundRows != 0 {
 			session.Options.ClientFoundRows = true
@@ -531,11 +539,15 @@ func rollbackAtShutdown() {
 	// Close all open connections. If they're waiting for reads, this will cause
 	// them to error out, which will automatically rollback open transactions.
 	func() {
-		vtgateHandle.mu.Lock()
-		defer vtgateHandle.mu.Unlock()
-		for c := range vtgateHandle.connections {
-			log.Infof("Rolling back transactions associated with connection ID: %v", c.ConnectionID)
-			c.Close()
+		if vtgateHandle != nil {
+			vtgateHandle.mu.Lock()
+			defer vtgateHandle.mu.Unlock()
+			for c := range vtgateHandle.connections {
+				if c != nil {
+					log.Infof("Rolling back transactions associated with connection ID: %v", c.ConnectionID)
+					c.Close()
+				}
+			}
 		}
 	}()
 

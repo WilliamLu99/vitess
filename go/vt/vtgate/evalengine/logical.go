@@ -17,8 +17,8 @@ limitations under the License.
 package evalengine
 
 import (
-	"vitess.io/vitess/go/mysql/collations"
-	querypb "vitess.io/vitess/go/vt/proto/query"
+	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/vt/sqlparser"
 )
 
 type (
@@ -61,14 +61,14 @@ func makeboolean2(b, isNull bool) boolean {
 	return makeboolean(b)
 }
 
-func (b boolean) not() boolean {
-	switch b {
+func (left boolean) not() boolean {
+	switch left {
 	case boolFalse:
 		return boolTrue
 	case boolTrue:
 		return boolFalse
 	default:
-		return b
+		return left
 	}
 }
 
@@ -124,49 +124,47 @@ func (left boolean) xor(right boolean) boolean {
 	}
 }
 
-func (b boolean) evalResult() EvalResult {
-	if b == boolNULL {
-		return resultNull
-	}
-	return evalResultBool(b == boolTrue)
+func (n *NotExpr) eval(env *ExpressionEnv, out *EvalResult) {
+	var inner EvalResult
+	inner.init(env, n.Inner)
+	out.setBoolean(inner.truthy().not())
 }
 
-func (n *NotExpr) eval(env *ExpressionEnv) (EvalResult, error) {
-	res, err := n.Inner.eval(env)
-	if err != nil {
-		return EvalResult{}, err
-	}
-	return res.nonzero().not().evalResult(), nil
+func (n *NotExpr) typeof(env *ExpressionEnv) (sqltypes.Type, flag) {
+	_, flags := n.Inner.typeof(env)
+	return sqltypes.Uint64, flags
 }
 
-func (n *NotExpr) typeof(*ExpressionEnv) (querypb.Type, error) {
-	return querypb.Type_UINT64, nil
-}
-
-func (n *NotExpr) collation() collations.TypedCollation {
-	return collationNumeric
-}
-
-func (l *LogicalExpr) eval(env *ExpressionEnv) (EvalResult, error) {
-	lVal, err := l.Left.eval(env)
-	if err != nil {
-		return EvalResult{}, err
-	}
-	rVal, err := l.Right.eval(env)
-	if err != nil {
-		return EvalResult{}, err
-	}
-	if lVal.typ == querypb.Type_TUPLE || rVal.typ == querypb.Type_TUPLE {
+func (l *LogicalExpr) eval(env *ExpressionEnv, out *EvalResult) {
+	var left, right EvalResult
+	left.init(env, l.Left)
+	right.init(env, l.Right)
+	if left.typeof() == sqltypes.Tuple || right.typeof() == sqltypes.Tuple {
 		panic("did not typecheck tuples")
-		// return EvalResult{}, cardinalityError(1)
 	}
-	return l.op(lVal.nonzero(), rVal.nonzero()).evalResult(), nil
+	out.setBoolean(l.op(left.truthy(), right.truthy()))
 }
 
-func (l *LogicalExpr) typeof(env *ExpressionEnv) (querypb.Type, error) {
-	return querypb.Type_UINT64, nil
+func (l *LogicalExpr) typeof(env *ExpressionEnv) (sqltypes.Type, flag) {
+	_, f1 := l.Left.typeof(env)
+	_, f2 := l.Right.typeof(env)
+	return sqltypes.Uint64, f1 | f2
 }
 
-func (n *LogicalExpr) collation() collations.TypedCollation {
-	return collationNumeric
+// IsExpr represents the IS expression in MySQL.
+// boolean_primary IS [NOT] {TRUE | FALSE | NULL}
+type IsExpr struct {
+	UnaryExpr
+	Op    sqlparser.IsExprOperator
+	Check func(*EvalResult) bool
+}
+
+func (i *IsExpr) eval(env *ExpressionEnv, result *EvalResult) {
+	var in EvalResult
+	in.init(env, i.Inner)
+	result.setBool(i.Check(&in))
+}
+
+func (i *IsExpr) typeof(env *ExpressionEnv) (sqltypes.Type, flag) {
+	return sqltypes.Int64, 0
 }
