@@ -33,9 +33,7 @@ ifdef VT_GO_PARALLEL_VALUE
 export VT_GO_PARALLEL := -p $(VT_GO_PARALLEL_VALUE)
 endif
 
-ifdef VT_EXTRA_BUILD_FLAGS
-export EXTRA_BUILD_FLAGS := $(VT_EXTRA_BUILD_FLAGS)
-endif
+export EXTRA_BUILD_FLAGS := $(VT_EXTRA_BUILD_FLAGS) -buildvcs=false
 
 ifndef VTROOT
 export VTROOT=${PWD}
