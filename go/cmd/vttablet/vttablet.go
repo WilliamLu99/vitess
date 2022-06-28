@@ -23,11 +23,14 @@ import (
 	"flag"
 	"os"
 
+	"vitess.io/vitess/go/vt/vttablet/tabletmanager/vdiff"
+
+	rice "github.com/GeertJohan/go.rice"
+
 	"vitess.io/vitess/go/vt/binlog"
 	"vitess.io/vitess/go/vt/dbconfigs"
 	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/mysqlctl"
-	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/servenv"
 	"vitess.io/vitess/go/vt/tableacl"
 	"vitess.io/vitess/go/vt/tableacl/simpleacl"
@@ -40,7 +43,7 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/tabletenv"
 	"vitess.io/vitess/go/yaml2"
 
-	rice "github.com/GeertJohan/go.rice"
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 )
 
 var (
@@ -65,11 +68,11 @@ func main() {
 	servenv.Init()
 
 	if *tabletPath == "" {
-		log.Exit("-tablet-path required")
+		log.Exit("--tablet-path required")
 	}
 	tabletAlias, err := topoproto.ParseTabletAlias(*tabletPath)
 	if err != nil {
-		log.Exitf("failed to parse -tablet-path: %v", err)
+		log.Exitf("failed to parse --tablet-path: %v", err)
 	}
 
 	// config and mycnf initializations are intertwined.
@@ -92,7 +95,7 @@ func main() {
 	}
 	tablet, err := tabletmanager.BuildTabletFromInput(tabletAlias, int32(*servenv.Port), gRPCPort, mysqld.GetVersionString(), config.DB)
 	if err != nil {
-		log.Exitf("failed to parse -tablet-path: %v", err)
+		log.Exitf("failed to parse --tablet-path: %v", err)
 	}
 	tm = &tabletmanager.TabletManager{
 		BatchCtx:            context.Background(),
@@ -103,10 +106,11 @@ func main() {
 		QueryServiceControl: qsc,
 		UpdateStream:        binlog.NewUpdateStream(ts, tablet.Keyspace, tabletAlias.Cell, qsc.SchemaEngine()),
 		VREngine:            vreplication.NewEngine(config, ts, tabletAlias.Cell, mysqld, qsc.LagThrottler()),
+		VDiffEngine:         vdiff.NewEngine(config, ts, tablet),
 		MetadataManager:     &mysqlctl.MetadataManager{},
 	}
 	if err := tm.Start(tablet, config.Healthcheck.IntervalSeconds.Get()); err != nil {
-		log.Exitf("failed to parse -tablet-path or initialize DB credentials: %v", err)
+		log.Exitf("failed to parse --tablet-path or initialize DB credentials: %v", err)
 	}
 	servenv.OnClose(func() {
 		// Close the tm so that our topo entry gets pruned properly and any

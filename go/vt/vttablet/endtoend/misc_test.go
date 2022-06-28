@@ -125,7 +125,7 @@ func TestNocacheListArgs(t *testing.T) {
 	qr, err := client.Execute(
 		query,
 		map[string]*querypb.BindVariable{
-			"list": sqltypes.TestBindVariable([]interface{}{2, 3, 4}),
+			"list": sqltypes.TestBindVariable([]any{2, 3, 4}),
 		},
 	)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestNocacheListArgs(t *testing.T) {
 	qr, err = client.Execute(
 		query,
 		map[string]*querypb.BindVariable{
-			"list": sqltypes.TestBindVariable([]interface{}{3, 4}),
+			"list": sqltypes.TestBindVariable([]any{3, 4}),
 		},
 	)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestNocacheListArgs(t *testing.T) {
 	qr, err = client.Execute(
 		query,
 		map[string]*querypb.BindVariable{
-			"list": sqltypes.TestBindVariable([]interface{}{3}),
+			"list": sqltypes.TestBindVariable([]any{3}),
 		},
 	)
 	if err != nil {
@@ -162,7 +162,7 @@ func TestNocacheListArgs(t *testing.T) {
 	_, err = client.Execute(
 		query,
 		map[string]*querypb.BindVariable{
-			"list": sqltypes.TestBindVariable([]interface{}{}),
+			"list": sqltypes.TestBindVariable([]any{}),
 		},
 	)
 	want := "empty list supplied for list (CallerID: dev)"
@@ -302,10 +302,7 @@ func TestBindInSelect(t *testing.T) {
 		"select :bv from dual",
 		map[string]*querypb.BindVariable{"bv": sqltypes.Int64BindVariable(1)},
 	)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require.NoError(t, err)
 	want := &sqltypes.Result{
 		Fields: []*querypb.Field{{
 			Name:         "1",
@@ -595,8 +592,8 @@ func TestDBAStatements(t *testing.T) {
 
 type testLogger struct {
 	logs        []string
-	savedInfof  func(format string, args ...interface{})
-	savedErrorf func(format string, args ...interface{})
+	savedInfof  func(format string, args ...any)
+	savedErrorf func(format string, args ...any)
 }
 
 func newTestLogger() *testLogger {
@@ -614,13 +611,13 @@ func (tl *testLogger) Close() {
 	log.Errorf = tl.savedErrorf
 }
 
-func (tl *testLogger) recordInfof(format string, args ...interface{}) {
+func (tl *testLogger) recordInfof(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	tl.logs = append(tl.logs, msg)
 	tl.savedInfof(msg)
 }
 
-func (tl *testLogger) recordErrorf(format string, args ...interface{}) {
+func (tl *testLogger) recordErrorf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	tl.logs = append(tl.logs, msg)
 	tl.savedErrorf(msg)

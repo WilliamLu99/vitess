@@ -17,6 +17,7 @@ limitations under the License.
 package reparentutil
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -98,9 +99,9 @@ func TestSemiSyncAckersForPrimary(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := SetDurabilityPolicy(tt.durabilityPolicy)
+			durability, err := GetDurabilityPolicy(tt.durabilityPolicy)
 			require.NoError(t, err, "error setting durability policy")
-			semiSyncAckers := SemiSyncAckersForPrimary(tt.primary, tt.allTablets)
+			semiSyncAckers := SemiSyncAckersForPrimary(durability, tt.primary, tt.allTablets)
 			require.Equal(t, tt.wantSemiSyncAckers, semiSyncAckers)
 		})
 	}
@@ -196,9 +197,9 @@ func Test_haveRevokedForTablet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := SetDurabilityPolicy(tt.durabilityPolicy)
+			durability, err := GetDurabilityPolicy(tt.durabilityPolicy)
 			require.NoError(t, err)
-			out := haveRevokedForTablet(tt.primaryEligible, tt.tabletsReached, tt.allTablets)
+			out := haveRevokedForTablet(durability, tt.primaryEligible, tt.tabletsReached, tt.allTablets)
 			require.Equal(t, tt.revoked, out)
 		})
 	}
@@ -306,10 +307,77 @@ func Test_haveRevoked(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := SetDurabilityPolicy(tt.durabilityPolicy)
+			durability, err := GetDurabilityPolicy(tt.durabilityPolicy)
 			require.NoError(t, err)
-			out := haveRevoked(tt.tabletsReached, tt.allTablets)
+			out := haveRevoked(durability, tt.tabletsReached, tt.allTablets)
 			require.Equal(t, tt.revoked, out)
+		})
+	}
+}
+
+func Test_canEstablishForTablet(t *testing.T) {
+	tests := []struct {
+		name             string
+		durabilityPolicy string
+		primaryEligible  *topodatapb.Tablet
+		tabletsReached   []*topodatapb.Tablet
+		canEstablish     bool
+	}{
+		{
+			name:             "primary not reached",
+			durabilityPolicy: "none",
+			primaryEligible:  primaryTablet,
+			tabletsReached: []*topodatapb.Tablet{
+				replicaTablet, replicaCrossCellTablet, rdonlyCrossCellTablet, rdonlyTablet,
+			},
+			canEstablish: false,
+		}, {
+			name:             "not established",
+			durabilityPolicy: "semi_sync",
+			primaryEligible:  primaryTablet,
+			tabletsReached: []*topodatapb.Tablet{
+				primaryTablet, rdonlyCrossCellTablet, rdonlyTablet,
+			},
+			canEstablish: false,
+		}, {
+			name:             "not established",
+			durabilityPolicy: "cross_cell",
+			primaryEligible:  primaryTablet,
+			tabletsReached: []*topodatapb.Tablet{
+				primaryTablet, replicaTablet, rdonlyCrossCellTablet, rdonlyTablet,
+			},
+			canEstablish: false,
+		}, {
+			name:             "established",
+			durabilityPolicy: "none",
+			primaryEligible:  primaryTablet,
+			tabletsReached: []*topodatapb.Tablet{
+				primaryTablet,
+			},
+			canEstablish: true,
+		}, {
+			name:             "established",
+			durabilityPolicy: "semi_sync",
+			primaryEligible:  primaryTablet,
+			tabletsReached: []*topodatapb.Tablet{
+				primaryTablet, replicaTablet,
+			},
+			canEstablish: true,
+		}, {
+			name:             "established",
+			durabilityPolicy: "cross_cell",
+			primaryEligible:  primaryTablet,
+			tabletsReached: []*topodatapb.Tablet{
+				primaryTablet, replicaCrossCellTablet,
+			},
+			canEstablish: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("'%s' durability policy - %s", tt.durabilityPolicy, tt.name), func(t *testing.T) {
+			durability, err := GetDurabilityPolicy(tt.durabilityPolicy)
+			require.NoError(t, err)
+			require.Equalf(t, tt.canEstablish, canEstablishForTablet(durability, tt.primaryEligible, tt.tabletsReached), "canEstablishForTablet(%v, %v)", tt.primaryEligible, tt.tabletsReached)
 		})
 	}
 }

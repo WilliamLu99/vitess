@@ -734,21 +734,19 @@ func (scw *SplitCloneWorker) sanityCheckShardInfos(ctx context.Context) error {
 
 func (scw *SplitCloneWorker) loadVSchema(ctx context.Context) error {
 	var keyspaceSchema *vindexes.KeyspaceSchema
-	if *useV3ReshardingMode {
-		kschema, err := scw.wr.TopoServer().GetVSchema(ctx, scw.destinationKeyspace)
-		if err != nil {
-			return vterrors.Wrapf(err, "cannot load VSchema for keyspace %v", scw.destinationKeyspace)
-		}
-		if kschema == nil {
-			return vterrors.Errorf(vtrpc.Code_FAILED_PRECONDITION, "no VSchema for keyspace %v", scw.destinationKeyspace)
-		}
-
-		keyspaceSchema, err = vindexes.BuildKeyspaceSchema(kschema, scw.destinationKeyspace)
-		if err != nil {
-			return vterrors.Wrapf(err, "cannot build vschema for keyspace %v", scw.destinationKeyspace)
-		}
-		scw.keyspaceSchema = keyspaceSchema
+	kschema, err := scw.wr.TopoServer().GetVSchema(ctx, scw.destinationKeyspace)
+	if err != nil {
+		return vterrors.Wrapf(err, "cannot load VSchema for keyspace %v", scw.destinationKeyspace)
 	}
+	if kschema == nil {
+		return vterrors.Errorf(vtrpc.Code_FAILED_PRECONDITION, "no VSchema for keyspace %v", scw.destinationKeyspace)
+	}
+
+	keyspaceSchema, err = vindexes.BuildKeyspaceSchema(kschema, scw.destinationKeyspace)
+	if err != nil {
+		return vterrors.Wrapf(err, "cannot build vschema for keyspace %v", scw.destinationKeyspace)
+	}
+	scw.keyspaceSchema = keyspaceSchema
 	return nil
 }
 
@@ -921,7 +919,7 @@ func (scw *SplitCloneWorker) getCounters(state StatusWorkerState) ([]*stats.Coun
 	}
 }
 
-func (scw *SplitCloneWorker) startExecutor(ctx context.Context, wg *sync.WaitGroup, keyspace, shard string, insertChannel chan string, threadID int, processError func(string, ...interface{})) {
+func (scw *SplitCloneWorker) startExecutor(ctx context.Context, wg *sync.WaitGroup, keyspace, shard string, insertChannel chan string, threadID int, processError func(string, ...any)) {
 	defer wg.Done()
 	t := scw.getThrottler(keyspace, shard)
 	//defer t.ThreadFinished(threadID)
@@ -1020,7 +1018,7 @@ func (scw *SplitCloneWorker) getDestinationResultReader(ctx context.Context, td 
 	return resultReader, err
 }
 
-func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, processError func(string, ...interface{}), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, txID int64, statsCounters []*stats.CountersWithSingleLabel) {
+func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, processError func(string, ...any), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, txID int64, statsCounters []*stats.CountersWithSingleLabel) {
 	errPrefix := fmt.Sprintf("table=%v chunk=%v", td.Name, chunk)
 
 	var err error
@@ -1085,7 +1083,7 @@ type workUnit struct {
 }
 
 func (scw *SplitCloneWorker) startCloningData(ctx context.Context, state StatusWorkerState, sourceSchemaDefinition *tabletmanagerdatapb.SchemaDefinition,
-	processError func(string, ...interface{}), firstSourceTablet *topodatapb.Tablet, tableStatusList *tableStatusList,
+	processError func(string, ...any), firstSourceTablet *topodatapb.Tablet, tableStatusList *tableStatusList,
 	start time.Time, statsCounters []*stats.CountersWithSingleLabel, insertChannels []chan string, wg *sync.WaitGroup) error {
 
 	workPipeline := make(chan workUnit, 10) // We'll use a small buffer so producers do not run too far ahead of consumers
@@ -1180,7 +1178,7 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 
 	ctx, cancelCopy := context.WithCancel(ctx)
 	defer cancelCopy()
-	processError := func(format string, args ...interface{}) {
+	processError := func(format string, args ...any) {
 		// in theory we could have two threads see firstError as null and both write to the variable
 		// that should not cause any problems though - canceling and logging is concurrently safe,
 		// and overwriting the variable will not cause any problems
@@ -1320,7 +1318,8 @@ func (scw *SplitCloneWorker) getSourceSchema(ctx context.Context, tablet *topoda
 	// in each source shard for each table to be about the same
 	// (rowCount is used to estimate an ETA)
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-	sourceSchemaDefinition, err := schematools.GetSchema(shortCtx, scw.wr.TopoServer(), scw.wr.TabletManagerClient(), tablet.Alias, scw.tables, scw.excludeTables, false /* includeViews */)
+	req := &tabletmanagerdatapb.GetSchemaRequest{Tables: scw.tables, ExcludeTables: scw.excludeTables}
+	sourceSchemaDefinition, err := schematools.GetSchema(shortCtx, scw.wr.TopoServer(), scw.wr.TabletManagerClient(), tablet.Alias, req)
 	cancel()
 	if err != nil {
 		return nil, vterrors.Wrapf(err, "cannot get schema from source %v", topoproto.TabletAliasString(tablet.Alias))
@@ -1346,11 +1345,7 @@ func (scw *SplitCloneWorker) createKeyResolver(td *tabletmanagerdatapb.TableDefi
 		// and therefore does not require routing between multiple shards.
 		return nil, nil
 	}
-
-	if *useV3ReshardingMode {
-		return newV3ResolverFromTableDefinition(scw.keyspaceSchema, td)
-	}
-	return newV2Resolver(scw.destinationKeyspaceInfo, td)
+	return newV3ResolverFromTableDefinition(scw.keyspaceSchema, td)
 }
 
 // StatsUpdate receives replication lag updates for each destination primary

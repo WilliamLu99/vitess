@@ -54,9 +54,7 @@ import (
 func TestStrictMode(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	// Test default behavior.
 	config := tabletenv.NewDefaultConfig()
@@ -99,9 +97,7 @@ func TestStrictMode(t *testing.T) {
 func TestGetPlanPanicDuetoEmptyQuery(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 	qe := newTestQueryEngine(10*time.Second, true, newDBConfigs(db))
 	qe.se.Open()
 	qe.Open()
@@ -109,7 +105,7 @@ func TestGetPlanPanicDuetoEmptyQuery(t *testing.T) {
 
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
-	_, err := qe.GetPlan(ctx, logStats, "", false, false /* inReservedConn */)
+	_, err := qe.GetPlan(ctx, logStats, "", false, 0, nil)
 	require.EqualError(t, err, "query was empty")
 }
 
@@ -133,9 +129,7 @@ func addSchemaEngineQueries(db *fakesqldb.DB) {
 func TestGetMessageStreamPlan(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	addSchemaEngineQueries(db)
 
@@ -167,7 +161,7 @@ func TestGetMessageStreamPlan(t *testing.T) {
 func assertPlanCacheSize(t *testing.T, qe *QueryEngine, expected int) {
 	var size int
 	qe.plans.Wait()
-	qe.plans.ForEach(func(_ interface{}) bool {
+	qe.plans.ForEach(func(_ any) bool {
 		size++
 		return true
 	})
@@ -179,9 +173,7 @@ func assertPlanCacheSize(t *testing.T, qe *QueryEngine, expected int) {
 func TestQueryPlanCache(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	firstQuery := "select * from test_table_01"
 	secondQuery := "select * from test_table_02"
@@ -200,14 +192,14 @@ func TestQueryPlanCache(t *testing.T) {
 	} else {
 		qe.SetQueryPlanCacheCap(1)
 	}
-	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false, false /* inReservedConn */)
+	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if firstPlan == nil {
 		t.Fatalf("plan should not be nil")
 	}
-	secondPlan, err := qe.GetPlan(ctx, logStats, secondQuery, false, false /* inReservedConn */)
+	secondPlan, err := qe.GetPlan(ctx, logStats, secondQuery, false, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,9 +216,7 @@ func TestQueryPlanCache(t *testing.T) {
 func TestNoQueryPlanCache(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	firstQuery := "select * from test_table_01"
 	db.AddQuery("select * from test_table_01 where 1 != 1", &sqltypes.Result{})
@@ -240,7 +230,7 @@ func TestNoQueryPlanCache(t *testing.T) {
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
 	qe.SetQueryPlanCacheCap(1024)
-	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, true, false /* inReservedConn */)
+	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, true, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,11 +244,10 @@ func TestNoQueryPlanCache(t *testing.T) {
 func TestNoQueryPlanCacheDirective(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	firstQuery := "select /*vt+ SKIP_QUERY_PLAN_CACHE=1 */ * from test_table_01"
+	db.AddQuery("select * from test_table_01 where 1 != 1", &sqltypes.Result{})
 	db.AddQuery("select /*vt+ SKIP_QUERY_PLAN_CACHE=1 */ * from test_table_01 where 1 != 1", &sqltypes.Result{})
 	db.AddQuery("select /*vt+ SKIP_QUERY_PLAN_CACHE=1 */ * from test_table_02 where 1 != 1", &sqltypes.Result{})
 
@@ -270,7 +259,7 @@ func TestNoQueryPlanCacheDirective(t *testing.T) {
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
 	qe.SetQueryPlanCacheCap(1024)
-	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false, false /* inReservedConn */)
+	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,9 +273,7 @@ func TestNoQueryPlanCacheDirective(t *testing.T) {
 func TestStatsURL(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 	query := "select * from test_table_01"
 	db.AddQuery("select * from test_table_01 where 1 != 1", &sqltypes.Result{})
 	qe := newTestQueryEngine(1*time.Second, true, newDBConfigs(db))
@@ -296,7 +283,7 @@ func TestStatsURL(t *testing.T) {
 	// warm up cache
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
-	qe.GetPlan(ctx, logStats, query, false, false /* inReservedConn */)
+	qe.GetPlan(ctx, logStats, query, false, 0, nil)
 
 	request, _ := http.NewRequest("GET", "/debug/tablet_plans", nil)
 	response := httptest.NewRecorder()
@@ -387,9 +374,7 @@ func BenchmarkPlanCacheThroughput(b *testing.B) {
 	db := fakesqldb.New(b)
 	defer db.Close()
 
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	db.AddQueryPattern(".*", &sqltypes.Result{})
 
@@ -403,7 +388,7 @@ func BenchmarkPlanCacheThroughput(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		query := fmt.Sprintf("SELECT (a, b, c) FROM test_table_%d", rand.Intn(500))
-		_, err := qe.GetPlan(ctx, logStats, query, false, false /* inReservedConn */)
+		_, err := qe.GetPlan(ctx, logStats, query, false, 0, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -434,7 +419,7 @@ func benchmarkPlanCache(b *testing.B, db *fakesqldb.DB, lfu bool, par int) {
 
 		for pb.Next() {
 			query := fmt.Sprintf("SELECT (a, b, c) FROM test_table_%d", rand.Intn(500))
-			_, err := qe.GetPlan(ctx, logStats, query, false, false /* inReservedConn */)
+			_, err := qe.GetPlan(ctx, logStats, query, false, 0, nil)
 			require.NoErrorf(b, err, "bad query: %s", query)
 		}
 	})
@@ -444,9 +429,7 @@ func BenchmarkPlanCacheContention(b *testing.B) {
 	db := fakesqldb.New(b)
 	defer db.Close()
 
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	db.AddQueryPattern(".*", &sqltypes.Result{})
 
@@ -473,9 +456,7 @@ func TestPlanCachePollution(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()
 
-	for query, result := range schematest.Queries() {
-		db.AddQuery(query, result)
-	}
+	schematest.AddDefaultQueries(db)
 
 	db.AddQueryPattern(".*", &sqltypes.Result{})
 
@@ -564,7 +545,7 @@ func TestPlanCachePollution(t *testing.T) {
 			query := sample()
 
 			start := time.Now()
-			_, err := qe.GetPlan(ctx, logStats, query, false, false /* inReservedConn */)
+			_, err := qe.GetPlan(ctx, logStats, query, false, 0, nil)
 			require.NoErrorf(t, err, "bad query: %s", query)
 			stats.interval += time.Since(start)
 

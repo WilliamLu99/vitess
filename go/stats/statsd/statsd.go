@@ -108,6 +108,10 @@ func (sb StatsBackend) addExpVar(kv expvar.KeyValue) {
 		if err := sb.statsdClient.Gauge(k, float64(v.Get()), nil, sb.sampleRate); err != nil {
 			log.Errorf("Failed to add Gauge %v for key %v", v, k)
 		}
+	case *stats.GaugeFloat64:
+		if err := sb.statsdClient.Gauge(k, v.Get(), nil, sb.sampleRate); err != nil {
+			log.Errorf("Failed to add GaugeFloat64 %v for key %v", v, k)
+		}
 	case *stats.GaugeFunc:
 		if err := sb.statsdClient.Gauge(k, float64(v.F()), nil, sb.sampleRate); err != nil {
 			log.Errorf("Failed to add GaugeFunc %v for key %v", v, k)
@@ -174,7 +178,7 @@ func (sb StatsBackend) addExpVar(kv expvar.KeyValue) {
 	case expvar.Func:
 		// Export memstats as gauge so that we don't need to call extra ReadMemStats
 		if k == "memstats" {
-			var obj map[string]interface{}
+			var obj map[string]any
 			if err := json.Unmarshal([]byte(v.String()), &obj); err != nil {
 				return
 			}

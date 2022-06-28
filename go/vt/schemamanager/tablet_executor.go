@@ -25,6 +25,7 @@ import (
 	"vitess.io/vitess/go/sync2"
 	"vitess.io/vitess/go/vt/logutil"
 	querypb "vitess.io/vitess/go/vt/proto/query"
+	tabletmanagerdatapb "vitess.io/vitess/go/vt/proto/tabletmanagerdata"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/schema"
 	"vitess.io/vitess/go/vt/sqlparser"
@@ -217,12 +218,23 @@ func (exec *TabletExecutor) isOnlineSchemaDDL(stmt sqlparser.Statement) (isOnlin
 //   1. Alter more than 100,000 rows.
 //   2. Change a table with more than 2,000,000 rows (Drops are fine).
 func (exec *TabletExecutor) detectBigSchemaChanges(ctx context.Context, parsedDDLs []sqlparser.DDLStatement) (bool, error) {
+	// We want to avoid any overhead if possible. If all DDLs are online schema changes, then we want to
+	// skip GetSchema altogether.
+	foundAnyNonOnlineDDL := false
+	for _, ddl := range parsedDDLs {
+		if !exec.isOnlineSchemaDDL(ddl) {
+			foundAnyNonOnlineDDL = true
+		}
+	}
+	if !foundAnyNonOnlineDDL {
+		return false, nil
+	}
 	// exec.tablets is guaranteed to have at least one element;
 	// Otherwise, Open should fail and executor should fail.
 	primaryTabletInfo := exec.tablets[0]
 	// get database schema, excluding views.
-	dbSchema, err := exec.tmc.GetSchema(
-		ctx, primaryTabletInfo, []string{}, []string{}, false)
+	req := &tabletmanagerdatapb.GetSchemaRequest{Tables: []string{}, ExcludeTables: []string{}, TableSchemaOnly: true}
+	dbSchema, err := exec.tmc.GetSchema(ctx, primaryTabletInfo, req)
 	if err != nil {
 		return false, fmt.Errorf("unable to get database schema, error: %v", err)
 	}
@@ -361,28 +373,6 @@ func (exec *TabletExecutor) Execute(ctx context.Context, sqls []string) *Execute
 	return &execResult
 }
 
-// executeOnlineDDL submits an online DDL request; this runs on topo, not on tablets, and is a quick operation.
-func (exec *TabletExecutor) executeOnlineDDL(
-	ctx context.Context, execResult *ExecuteResult, onlineDDL *schema.OnlineDDL,
-) {
-	if exec.ddlStrategySetting == nil || exec.ddlStrategySetting.Strategy.IsDirect() {
-		execResult.ExecutorErr = "Not an online DDL strategy"
-		return
-	}
-	conn, err := exec.ts.ConnForCell(ctx, topo.GlobalCell)
-	if err != nil {
-		execResult.ExecutorErr = fmt.Sprintf("online DDL ConnForCell error:%s", err.Error())
-		return
-	}
-	err = onlineDDL.WriteTopo(ctx, conn, schema.MigrationRequestsPath())
-	if err != nil {
-		execResult.ExecutorErr = err.Error()
-	}
-	execResult.UUIDs = append(execResult.UUIDs, onlineDDL.UUID)
-	exec.logger.Infof("UUID=%+v", onlineDDL.UUID)
-	exec.logger.Printf("%s\n", onlineDDL.UUID)
-}
-
 // executeOnAllTablets runs a query on all tablets, synchronously. This can be a long running operation.
 func (exec *TabletExecutor) executeOnAllTablets(ctx context.Context, execResult *ExecuteResult, sql string, viaQueryService bool) {
 	var wg sync.WaitGroup
@@ -452,7 +442,18 @@ func (exec *TabletExecutor) executeOneTablet(
 		result, err = exec.tmc.ExecuteQuery(ctx, tablet, []byte(sql), 10)
 	} else {
 		if exec.ddlStrategySetting != nil && exec.ddlStrategySetting.IsAllowZeroInDateFlag() {
-			sql = fmt.Sprintf("set @@session.sql_mode=REPLACE(REPLACE(@@session.sql_mode, 'NO_ZERO_DATE', ''), 'NO_ZERO_IN_DATE', ''); %s", sql)
+			// --allow-zero-in-date Applies to DDLs
+			stmt, err := sqlparser.Parse(string(sql))
+			if err != nil {
+				errChan <- ShardWithError{Shard: tablet.Shard, Err: err.Error()}
+				return
+			}
+			if ddlStmt, ok := stmt.(sqlparser.DDLStatement); ok {
+				// Add comments directive to allow zero in date
+				const directive = `/*vt+ allowZeroInDate=true */`
+				ddlStmt.SetComments(ddlStmt.GetParsedComments().Prepend(directive))
+				sql = sqlparser.String(ddlStmt)
+			}
 		}
 		result, err = exec.tmc.ExecuteFetchAsDba(ctx, tablet, false, []byte(sql), 10, false, true)
 	}

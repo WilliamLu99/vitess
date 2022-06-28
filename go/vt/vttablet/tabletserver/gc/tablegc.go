@@ -112,8 +112,8 @@ type TableGC struct {
 	lifecycleStates map[schema.TableGCState]bool
 }
 
-// GCStatus published some status valus from the collector
-type GCStatus struct {
+// Status published some status valus from the collector
+type Status struct {
 	Keyspace string
 	Shard    string
 
@@ -184,7 +184,7 @@ func (collector *TableGC) Open() (err error) {
 		return err
 	}
 	defer conn.Close()
-	serverSupportsFastDrops, err := conn.SupportsFastDropTable()
+	serverSupportsFastDrops, err := conn.SupportsCapability(mysql.FastDropTableFlavorCapability)
 	if err != nil {
 		return err
 	}
@@ -202,9 +202,12 @@ func (collector *TableGC) Open() (err error) {
 
 // Close frees resources
 func (collector *TableGC) Close() {
+	log.Infof("TableGC - started execution of Close. Acquiring initMutex lock")
 	collector.initMutex.Lock()
+	log.Infof("TableGC - acquired lock")
 	defer collector.initMutex.Unlock()
 	if atomic.LoadInt64(&collector.isOpen) == 0 {
+		log.Infof("TableGC - no collector is open")
 		// not open
 		return
 	}
@@ -213,8 +216,10 @@ func (collector *TableGC) Close() {
 	for _, t := range collector.tickers {
 		t.Suspend()
 	}
+	log.Infof("TableGC - closing pool")
 	collector.pool.Close()
 	atomic.StoreInt64(&collector.isOpen, 0)
+	log.Infof("TableGC - finished execution of Close")
 }
 
 // Operate is the main entry point for the table garbage collector operation and logic.
@@ -628,11 +633,11 @@ func (collector *TableGC) nextTableToPurge() (tableName string, ok bool) {
 }
 
 // Status exports a status breakdown
-func (collector *TableGC) Status() *GCStatus {
+func (collector *TableGC) Status() *Status {
 	collector.purgeMutex.Lock()
 	defer collector.purgeMutex.Unlock()
 
-	status := &GCStatus{
+	status := &Status{
 		Keyspace: collector.keyspace,
 		Shard:    collector.shard,
 

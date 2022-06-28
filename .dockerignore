@@ -10,3 +10,5 @@ releases
 /bin/
 /vtdataroot/
 **/.git
+/web/vtadmin/node_modules
+/web/vtadmin/build

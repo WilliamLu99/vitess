@@ -165,7 +165,7 @@ func refreshTabletsInKeyspaceShard(ctx context.Context, keyspace, shard string, 
 	refreshTablets(tablets, query, args, loader, forceRefresh)
 }
 
-func refreshTablets(tablets map[string]*topo.TabletInfo, query string, args []interface{}, loader func(instanceKey *inst.InstanceKey), forceRefresh bool) {
+func refreshTablets(tablets map[string]*topo.TabletInfo, query string, args []any, loader func(instanceKey *inst.InstanceKey), forceRefresh bool) {
 	// Discover new tablets.
 	// TODO(sougou): enhance this to work with multi-schema,
 	// where each instanceKey can have multiple tablets.
@@ -303,6 +303,10 @@ func tabletDemotePrimary(instanceKey inst.InstanceKey, forward bool) error {
 	if err != nil {
 		return err
 	}
+	durability, err := inst.GetDurabilityPolicy(tablet)
+	if err != nil {
+		return err
+	}
 	tmc := tmclient.NewTabletManagerClient()
 	// TODO(sougou): this should be controllable because we may want
 	// to give a longer timeout for a graceful takeover.
@@ -311,7 +315,7 @@ func tabletDemotePrimary(instanceKey inst.InstanceKey, forward bool) error {
 	if forward {
 		_, err = tmc.DemotePrimary(ctx, tablet)
 	} else {
-		err = tmc.UndoDemotePrimary(ctx, tablet, inst.SemiSyncAckers(instanceKey) > 0)
+		err = tmc.UndoDemotePrimary(ctx, tablet, inst.SemiSyncAckers(durability, instanceKey) > 0)
 	}
 	return err
 }
