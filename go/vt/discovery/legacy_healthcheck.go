@@ -224,7 +224,7 @@ func (e LegacyTabletStats) NamedStatusURL() string {
 func (e LegacyTabletStats) getTabletDebugURL() string {
 	var buffer bytes.Buffer
 
-	//Error logged
+	// Error logged
 	if err := tabletURLTemplate.Execute(&buffer, e); err != nil {
 		log.Errorf("tabletURLTemplate.Execute(&buffer, e) failed: %v", err)
 	}
@@ -372,7 +372,7 @@ type legacyTabletHealth struct {
 
 // NewLegacyDefaultHealthCheck creates a new LegacyHealthCheck object with a default configuration.
 func NewLegacyDefaultHealthCheck() LegacyHealthCheck {
-	return NewLegacyHealthCheck(DefaultHealthCheckRetryDelay, DefaultHealthCheckTimeout)
+	return NewLegacyHealthCheck(defaultHealthCheckRetryDelay, defaultHealthCheckTimeout)
 }
 
 // NewLegacyHealthCheck creates a new LegacyHealthCheck object.

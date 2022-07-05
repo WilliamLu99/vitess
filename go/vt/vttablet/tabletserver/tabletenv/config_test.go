@@ -48,6 +48,10 @@ func TestConfigParse(t *testing.T) {
 			PrefillParallelism: 30,
 			MaxWaiters:         40,
 		},
+		RowStreamer: RowStreamerConfig{
+			MaxInnoDBTrxHistLen: 1000,
+			MaxMySQLReplLagSecs: 400,
+		},
 	}
 	gotBytes, err := yaml2.Marshal(&cfg)
 	require.NoError(t, err)
@@ -79,6 +83,9 @@ oltpReadPool:
   size: 16
   timeoutSeconds: 10
 replicationTracker: {}
+rowStreamer:
+  maxInnoDBTrxHistLen: 1000
+  maxMySQLReplLagSecs: 400
 txPool: {}
 `
 	assert.Equal(t, wantBytes, string(gotBytes))
@@ -141,8 +148,12 @@ queryCacheSize: 5000
 replicationTracker:
   heartbeatIntervalSeconds: 0.25
   mode: disable
+rowStreamer:
+  maxInnoDBTrxHistLen: 1000000
+  maxMySQLReplLagSecs: 43200
 schemaReloadIntervalSeconds: 1800
 signalSchemaChangeReloadIntervalSeconds: 5
+signalWhenSchemaChange: true
 streamBufferSize: 32768
 txPool:
   idleTimeoutSeconds: 1800
@@ -164,6 +175,10 @@ func TestClone(t *testing.T) {
 			IdleTimeoutSeconds: 20,
 			PrefillParallelism: 30,
 			MaxWaiters:         40,
+		},
+		RowStreamer: RowStreamerConfig{
+			MaxInnoDBTrxHistLen: 1000000,
+			MaxMySQLReplLagSecs: 43200,
 		},
 	}
 	cfg2 := cfg1.Clone()
@@ -203,6 +218,7 @@ func TestFlags(t *testing.T) {
 		QueryCacheLFU:                           cache.DefaultConfig.LFU,
 		SchemaReloadIntervalSeconds:             1800,
 		SignalSchemaChangeReloadIntervalSeconds: 5,
+		SignalWhenSchemaChange:                  true,
 		TrackSchemaVersions:                     false,
 		MessagePostponeParallelism:              4,
 		CacheResultFields:                       true,
@@ -216,6 +232,10 @@ func TestFlags(t *testing.T) {
 		EnforceStrictTransTables: true,
 		EnableOnlineDDL:          true,
 		DB:                       &dbconfigs.DBConfigs{},
+		RowStreamer: RowStreamerConfig{
+			MaxInnoDBTrxHistLen: 1000000,
+			MaxMySQLReplLagSecs: 43200,
+		},
 	}
 	assert.Equal(t, want.DB, currentConfig.DB)
 	assert.Equal(t, want, currentConfig)
@@ -331,5 +351,15 @@ func TestFlags(t *testing.T) {
 	currentConfig.GracePeriods.TransitionSeconds = 0
 	Init()
 	want.GracePeriods.TransitionSeconds = 4
+	assert.Equal(t, want, currentConfig)
+
+	currentConfig.SanitizeLogMessages = false
+	Init()
+	want.SanitizeLogMessages = false
+	assert.Equal(t, want, currentConfig)
+
+	currentConfig.SanitizeLogMessages = true
+	Init()
+	want.SanitizeLogMessages = true
 	assert.Equal(t, want, currentConfig)
 }

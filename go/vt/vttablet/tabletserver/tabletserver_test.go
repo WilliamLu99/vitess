@@ -1341,8 +1341,8 @@ func TestHandleExecUnknownError(t *testing.T) {
 
 type testLogger struct {
 	logs        []string
-	savedInfof  func(format string, args ...interface{})
-	savedErrorf func(format string, args ...interface{})
+	savedInfof  func(format string, args ...any)
+	savedErrorf func(format string, args ...any)
 }
 
 func newTestLogger() *testLogger {
@@ -1360,13 +1360,13 @@ func (tl *testLogger) Close() {
 	log.Errorf = tl.savedErrorf
 }
 
-func (tl *testLogger) recordInfof(format string, args ...interface{}) {
+func (tl *testLogger) recordInfof(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	tl.logs = append(tl.logs, msg)
 	tl.savedInfof(msg)
 }
 
-func (tl *testLogger) recordErrorf(format string, args ...interface{}) {
+func (tl *testLogger) recordErrorf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	tl.logs = append(tl.logs, msg)
 	tl.savedErrorf(msg)
@@ -1775,7 +1775,6 @@ func TestReserveBeginExecute(t *testing.T) {
 	expected := []string{
 		"select 43",
 		"begin",
-		"select 42 from dual where 1 != 1",
 		"select 42 from dual limit 10001",
 	}
 	splitOutput := strings.Split(db.QueryLog(), ";")
@@ -1798,7 +1797,6 @@ func TestReserveExecute_WithoutTx(t *testing.T) {
 	assert.NotEqual(t, int64(0), reservedID, "reservedID should not be zero")
 	expected := []string{
 		"select 43",
-		"select 42 from dual where 1 != 1",
 		"select 42 from dual limit 10001",
 	}
 	splitOutput := strings.Split(db.QueryLog(), ";")
@@ -1826,7 +1824,6 @@ func TestReserveExecute_WithTx(t *testing.T) {
 	assert.Equal(t, transactionID, reservedID, "reservedID should be equal to transactionID")
 	expected := []string{
 		"select 43",
-		"select 42 from dual where 1 != 1",
 		"select 42 from dual limit 10001",
 	}
 	splitOutput := strings.Split(db.QueryLog(), ";")
@@ -2161,9 +2158,7 @@ func setupTabletServerTestCustom(t *testing.T, config *tabletenv.TabletConfig, k
 
 func setupFakeDB(t *testing.T) *fakesqldb.DB {
 	db := fakesqldb.New(t)
-	for query, result := range getSupportedQueries() {
-		db.AddQuery(query, result)
-	}
+	addTabletServerSupportedQueries(db)
 	db.AddQueryPattern(baseShowTablesPattern, &sqltypes.Result{
 		Fields: mysql.BaseShowTablesFields,
 		Rows: [][]sqltypes.Value{
@@ -2180,8 +2175,8 @@ func setupFakeDB(t *testing.T) *fakesqldb.DB {
 	return db
 }
 
-func getSupportedQueries() map[string]*sqltypes.Result {
-	return map[string]*sqltypes.Result{
+func addTabletServerSupportedQueries(db *fakesqldb.DB) {
+	queryResultMap := map[string]*sqltypes.Result{
 		// Queries for how row protection test (txserializer).
 		"update test_table set name_string = 'tx1' where pk = 1 and `name` = 1 limit 10001": {
 			RowsAffected: 1,
@@ -2306,6 +2301,45 @@ func getSupportedQueries() map[string]*sqltypes.Result {
 		"rollback": {},
 		fmt.Sprintf(sqlReadAllRedo, "_vt", "_vt"): {},
 	}
+	for query, result := range queryResultMap {
+		db.AddQuery(query, result)
+	}
+	db.MockQueriesForTable("test_table", &sqltypes.Result{
+		Fields: []*querypb.Field{{
+			Name: "pk",
+			Type: sqltypes.Int32,
+		}, {
+			Name: "name",
+			Type: sqltypes.Int32,
+		}, {
+			Name: "addr",
+			Type: sqltypes.Int32,
+		}, {
+			Name: "name_string",
+			Type: sqltypes.VarChar,
+		}},
+	})
+	db.MockQueriesForTable("msg", &sqltypes.Result{
+		Fields: []*querypb.Field{{
+			Name: "id",
+			Type: sqltypes.Int64,
+		}, {
+			Name: "priority",
+			Type: sqltypes.Int64,
+		}, {
+			Name: "time_next",
+			Type: sqltypes.Int64,
+		}, {
+			Name: "epoch",
+			Type: sqltypes.Int64,
+		}, {
+			Name: "time_acked",
+			Type: sqltypes.Int64,
+		}, {
+			Name: "message",
+			Type: sqltypes.Int64,
+		}},
+	})
 }
 
 func init() {

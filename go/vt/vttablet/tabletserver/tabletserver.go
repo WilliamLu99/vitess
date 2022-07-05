@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -170,10 +171,10 @@ func NewTabletServer(name string, config *tabletenv.TabletConfig, topoServer *to
 	tsv.statelessql = NewQueryList("oltp-stateless")
 	tsv.statefulql = NewQueryList("oltp-stateful")
 	tsv.olapql = NewQueryList("olap")
-	tsv.lagThrottler = throttle.NewThrottler(tsv, topoServer, tabletTypeFunc)
 	tsv.hs = newHealthStreamer(tsv, alias)
 	tsv.se = schema.NewEngine(tsv)
 	tsv.rt = repltracker.NewReplTracker(tsv, alias)
+	tsv.lagThrottler = throttle.NewThrottler(tsv, topoServer, tsv.rt.HeartbeatWriter(), tabletTypeFunc)
 	tsv.vstreamer = vstreamer.NewEngine(tsv, srvTopoServer, tsv.se, tsv.lagThrottler, alias.Cell)
 	tsv.tracker = schema.NewTracker(tsv, tsv.vstreamer, tsv.se)
 	tsv.watcher = NewBinlogWatcher(tsv, tsv.vstreamer, tsv.config)
@@ -182,7 +183,7 @@ func NewTabletServer(name string, config *tabletenv.TabletConfig, topoServer *to
 	tsv.te = NewTxEngine(tsv)
 	tsv.messager = messager.NewEngine(tsv, tsv.se, tsv.vstreamer)
 
-	tsv.onlineDDLExecutor = onlineddl.NewExecutor(tsv, alias, topoServer, tabletTypeFunc)
+	tsv.onlineDDLExecutor = onlineddl.NewExecutor(tsv, alias, topoServer, tsv.lagThrottler, tabletTypeFunc, tsv.onlineDDLExecutorToggleTableBuffer)
 	tsv.tableGC = gc.NewTableGC(tsv, topoServer, tabletTypeFunc, tsv.lagThrottler)
 
 	tsv.sm = &stateManager{
@@ -224,6 +225,26 @@ func NewTabletServer(name string, config *tabletenv.TabletConfig, topoServer *to
 	tsv.registerDebugEnvHandler()
 
 	return tsv
+}
+
+// onlineDDLExecutorToggleTableBuffer is called by onlineDDLExecutor as a callback function. onlineDDLExecutor
+// uses it to start/stop query buffering for a given table.
+// It is onlineDDLExecutor's responsibility to make sure beffering is stopped after some definite amount of time.
+// There are two layers to buffering/unbuffering:
+// 1. the creation and destruction of a QueryRuleSource. The existence of such source affects query plan rules
+//    for all new queries (see Execute() function and call to GetPlan())
+// 2. affecting already existing rules: a Rule has a concext.WithCancel, that is cancelled by onlineDDLExecutor
+func (tsv *TabletServer) onlineDDLExecutorToggleTableBuffer(bufferingCtx context.Context, tableName string, bufferQueries bool) {
+	queryRuleSource := fmt.Sprintf("onlineddl/%s", tableName)
+
+	if bufferQueries {
+		tsv.RegisterQueryRuleSource(queryRuleSource)
+		bufferRules := rules.New()
+		bufferRules.Add(rules.NewBufferedTableQueryRule(bufferingCtx, tableName, "buffered for cut-over"))
+		tsv.SetQueryRules(queryRuleSource, bufferRules)
+	} else {
+		tsv.UnRegisterQueryRuleSource(queryRuleSource) // new rules will not have buffering. Existing rules will be affected by bufferingContext.Done()
+	}
 }
 
 // InitDBConfig initializes the db config variables for TabletServer. You must call this function
@@ -709,7 +730,7 @@ func (tsv *TabletServer) Execute(ctx context.Context, target *querypb.Target, sq
 				bindVariables = make(map[string]*querypb.BindVariable)
 			}
 			query, comments := sqlparser.SplitMarginComments(sql)
-			plan, err := tsv.qe.GetPlan(ctx, logStats, query, skipQueryPlanCache(options), reservedID != 0)
+			plan, err := tsv.qe.GetPlan(ctx, logStats, query, skipQueryPlanCache(options), reservedID, tsv.te)
 			if err != nil {
 				return err
 			}
@@ -913,7 +934,7 @@ func (tsv *TabletServer) beginWaitForSameRangeTransactions(ctx context.Context, 
 func (tsv *TabletServer) computeTxSerializerKey(ctx context.Context, logStats *tabletenv.LogStats, sql string, bindVariables map[string]*querypb.BindVariable) (string, string) {
 	// Strip trailing comments so we don't pollute the query cache.
 	sql, _ = sqlparser.SplitMarginComments(sql)
-	plan, err := tsv.qe.GetPlan(ctx, logStats, sql, false /* skipQueryPlanCache */, false /* isReservedConn */)
+	plan, err := tsv.qe.GetPlan(ctx, logStats, sql, false, 0, nil)
 	if err != nil {
 		logComputeRowSerializerKey.Errorf("failed to get plan for query: %v err: %v", sql, err)
 		return "", ""
@@ -1272,7 +1293,7 @@ func (tsv *TabletServer) execRequest(
 	logStats := tabletenv.NewLogStats(ctx, requestName)
 	logStats.Target = target
 	logStats.OriginalSQL = sql
-	logStats.BindVariables = bindVariables
+	logStats.BindVariables = sqltypes.CopyBindVariables(bindVariables)
 	defer tsv.handlePanicAndSendLogStats(sql, bindVariables, logStats)
 
 	if err = tsv.sm.StartRequest(ctx, target, allowOnShutdown); err != nil {
@@ -1444,7 +1465,7 @@ func convertErrorCode(err error) vtrpcpb.Code {
 		errCode = vtrpcpb.Code_RESOURCE_EXHAUSTED
 	case mysql.ERLockWaitTimeout:
 		errCode = vtrpcpb.Code_DEADLINE_EXCEEDED
-	case mysql.CRServerGone, mysql.ERServerShutdown, mysql.ERServerIsntAvailable:
+	case mysql.CRServerGone, mysql.ERServerShutdown, mysql.ERServerIsntAvailable, mysql.CRConnectionError, mysql.CRConnHostError:
 		errCode = vtrpcpb.Code_UNAVAILABLE
 	case mysql.ERFormNotFound, mysql.ERKeyNotFound, mysql.ERBadFieldError, mysql.ERNoSuchThread, mysql.ERUnknownTable, mysql.ERCantFindUDF, mysql.ERNonExistingGrant,
 		mysql.ERNoSuchTable, mysql.ERNonExistingTableGrant, mysql.ERKeyDoesNotExist:
@@ -1480,7 +1501,7 @@ func convertErrorCode(err error) vtrpcpb.Code {
 		mysql.ERCantAggregate3Collations, mysql.ERCantAggregateNCollations, mysql.ERVariableIsNotStruct, mysql.ERUnknownCollation, mysql.ERWrongNameForIndex,
 		mysql.ERWrongNameForCatalog, mysql.ERBadFTColumn, mysql.ERTruncatedWrongValue, mysql.ERTooMuchAutoTimestampCols, mysql.ERInvalidOnUpdate, mysql.ERUnknownTimeZone,
 		mysql.ERInvalidCharacterString, mysql.ERIllegalReference, mysql.ERDerivedMustHaveAlias, mysql.ERTableNameNotAllowedHere, mysql.ERDataTooLong, mysql.ERDataOutOfRange,
-		mysql.ERTruncatedWrongValueForField:
+		mysql.ERTruncatedWrongValueForField, mysql.ERIllegalValueForType:
 		errCode = vtrpcpb.Code_INVALID_ARGUMENT
 	case mysql.ERSpecifiedAccessDenied:
 		errCode = vtrpcpb.Code_PERMISSION_DENIED
@@ -1619,7 +1640,7 @@ func (tsv *TabletServer) registerMigrationStatusHandler() {
 	tsv.exporter.HandleFunc("/schema-migration/report-status", func(w http.ResponseWriter, r *http.Request) {
 		ctx := tabletenv.LocalContext()
 		query := r.URL.Query()
-		if err := tsv.onlineDDLExecutor.OnSchemaMigrationStatus(ctx, query.Get("uuid"), query.Get("status"), query.Get("dryrun"), query.Get("progress"), query.Get("eta"), query.Get("rowscopied")); err != nil {
+		if err := tsv.onlineDDLExecutor.OnSchemaMigrationStatus(ctx, query.Get("uuid"), query.Get("status"), query.Get("dryrun"), query.Get("progress"), query.Get("eta"), query.Get("rowscopied"), query.Get("hint")); err != nil {
 			http.Error(w, fmt.Sprintf("not ok: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -1681,7 +1702,15 @@ func (tsv *TabletServer) registerThrottlerThrottleAppHandler() {
 			http.Error(w, fmt.Sprintf("not ok: %v", err), http.StatusInternalServerError)
 			return
 		}
-		appThrottle := tsv.lagThrottler.ThrottleApp(appName, time.Now().Add(d), 1)
+		var ratio = 1.0
+		if ratioParam := r.URL.Query().Get("ratio"); ratioParam != "" {
+			ratio, err = strconv.ParseFloat(ratioParam, 64)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("not ok: %v", err), http.StatusInternalServerError)
+				return
+			}
+		}
+		appThrottle := tsv.lagThrottler.ThrottleApp(appName, time.Now().Add(d), ratio)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(appThrottle)
@@ -1692,6 +1721,12 @@ func (tsv *TabletServer) registerThrottlerThrottleAppHandler() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(appThrottle)
+	})
+	tsv.exporter.HandleFunc("/throttler/throttled-apps", func(w http.ResponseWriter, r *http.Request) {
+		throttledApps := tsv.lagThrottler.ThrottledApps()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(throttledApps)
 	})
 }
 

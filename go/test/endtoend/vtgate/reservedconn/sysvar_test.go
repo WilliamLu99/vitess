@@ -128,7 +128,7 @@ func TestSetSystemVarWithTxFailure(t *testing.T) {
 	utils.Exec(t, conn, "insert into test (id, val1) values (80, null)")
 
 	// before changing any settings, let's confirm sql_safe_updates value
-	utils.AssertMatches(t, conn, `select @@sql_safe_updates from test where id = 80`, `[[INT64(0)]]`)
+	utils.AssertMatches(t, conn, `select /*vt+ PLANNER=gen4 */ @@sql_safe_updates from test where id = 80`, `[[INT64(0)]]`)
 
 	utils.Exec(t, conn, "set sql_safe_updates = 1")
 	utils.Exec(t, conn, "begin")
@@ -301,6 +301,27 @@ func TestSetSystemVarInTxWithConnError(t *testing.T) {
 
 	// subsequent queries on 80- will pass
 	utils.AssertMatches(t, conn, "select id, @@sql_safe_updates from test where id = 4", "[[INT64(4) INT64(1)]]")
+}
+
+func BenchmarkReservedConnFieldQuery(b *testing.B) {
+	vtParams := mysql.ConnParams{
+		Host: "localhost",
+		Port: clusterInstance.VtgateMySQLPort,
+	}
+	conn, err := mysql.Connect(context.Background(), &vtParams)
+	require.NoError(b, err)
+	defer conn.Close()
+
+	utils.Exec(b, conn, "delete from test")
+	utils.Exec(b, conn, "insert into test (id, val1) values (1, 'toto'), (4, 'tata')")
+
+	// set sql_mode to empty to force the use of reserved connection
+	utils.Exec(b, conn, "set sql_mode = ''")
+	utils.AssertMatches(b, conn, "select 	@@sql_mode", `[[VARCHAR("")]]`)
+
+	for i := 0; i < b.N; i++ {
+		utils.Exec(b, conn, "select id, val1 from test")
+	}
 }
 
 func TestEnableSystemSettings(t *testing.T) {

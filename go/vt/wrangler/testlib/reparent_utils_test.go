@@ -20,7 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"vitess.io/vitess/go/vt/vtctl/reparentutil/reparenttestutil"
+
 	"vitess.io/vitess/go/vt/discovery"
+	"vitess.io/vitess/go/vt/vtctl/reparentutil"
 
 	"context"
 
@@ -90,7 +93,7 @@ func TestShardReplicationStatuses(t *testing.T) {
 	defer replica.StopActionLoop(t)
 
 	// run ShardReplicationStatuses
-	ti, rs, err := wr.ShardReplicationStatuses(ctx, "test_keyspace", "0")
+	ti, rs, err := reparentutil.ShardReplicationStatuses(ctx, wr.TopoServer(), wr.TabletManagerClient(), "test_keyspace", "0")
 	if err != nil {
 		t.Fatalf("ShardReplicationStatuses failed: %v", err)
 	}
@@ -128,6 +131,7 @@ func TestReparentTablet(t *testing.T) {
 	}
 	primary := NewFakeTablet(t, wr, "cell1", 1, topodatapb.TabletType_PRIMARY, nil)
 	replica := NewFakeTablet(t, wr, "cell1", 2, topodatapb.TabletType_REPLICA, nil)
+	reparenttestutil.SetKeyspaceDurability(context.Background(), t, ts, "test_keyspace", "semi_sync")
 
 	// mark the primary inside the shard
 	if _, err := ts.UpdateShardFields(ctx, "test_keyspace", "0", func(si *topo.ShardInfo) error {

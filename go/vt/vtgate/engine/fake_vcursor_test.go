@@ -33,7 +33,6 @@ import (
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/test/utils"
 	"vitess.io/vitess/go/vt/key"
-	"vitess.io/vitess/go/vt/schema"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/srvtopo"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
@@ -52,7 +51,51 @@ var _ SessionActions = (*noopVCursor)(nil)
 
 // noopVCursor is used to build other vcursors.
 type noopVCursor struct {
-	ctx context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func newNoopVCursor(ctx context.Context) *noopVCursor {
+	n := &noopVCursor{}
+	n.ctx, n.cancel = context.WithCancel(ctx)
+	return n
+}
+
+func (t *noopVCursor) AnyAdvisoryLockTaken() bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *noopVCursor) AddAdvisoryLock(name string) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *noopVCursor) RemoveAdvisoryLock(name string) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *noopVCursor) ReleaseLock() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *noopVCursor) CancelContext() {
+	t.cancel()
+}
+
+func (t *noopVCursor) SetExec(name string, value string) error {
+	panic("implement me")
+}
+
+func (t *noopVCursor) ShowExec(command sqlparser.ShowCommandType, filter *sqlparser.ShowFilter) (*sqltypes.Result, error) {
+	panic("implement me")
+}
+
+// SetContextWithValue implements VCursor interface.
+func (t *noopVCursor) SetContextWithValue(key, value interface{}) func() {
+	return func() {}
 }
 
 // ConnCollation implements VCursor
@@ -116,7 +159,7 @@ func (t *noopVCursor) GetSessionEnableSystemSettings() bool {
 	panic("implement me")
 }
 
-func (t *noopVCursor) GetEnableSetVar() bool {
+func (t *noopVCursor) CanUseSetVar() bool {
 	panic("implement me")
 }
 
@@ -148,14 +191,14 @@ func (t *noopVCursor) FindRoutedTable(sqlparser.TableName) (*vindexes.Table, err
 	panic("implement me")
 }
 
-func (t *noopVCursor) ExecuteLock(rs *srvtopo.ResolvedShard, query *querypb.BoundQuery) (*sqltypes.Result, error) {
+func (t *noopVCursor) ExecuteLock(rs *srvtopo.ResolvedShard, query *querypb.BoundQuery, lockFuncType sqlparser.LockingFuncType) (*sqltypes.Result, error) {
 	panic("implement me")
 }
 
 func (t *noopVCursor) NeedsReservedConn() {
 }
 
-func (t *noopVCursor) SetUDV(key string, value interface{}) error {
+func (t *noopVCursor) SetUDV(key string, value any) error {
 	panic("implement me")
 }
 
@@ -276,10 +319,6 @@ func (t *noopVCursor) ResolveDestinationsMultiCol(keyspace string, ids [][]sqlty
 	panic("unimplemented")
 }
 
-func (t *noopVCursor) SubmitOnlineDDL(onlineDDl *schema.OnlineDDL) error {
-	panic("unimplemented")
-}
-
 func (t *noopVCursor) GetDBDDLPluginName() string {
 	panic("unimplemented")
 }
@@ -359,7 +398,7 @@ func (f *loggingVCursor) LookupRowLockShardSession() vtgatepb.CommitOrder {
 	panic("implement me")
 }
 
-func (f *loggingVCursor) SetUDV(key string, value interface{}) error {
+func (f *loggingVCursor) SetUDV(key string, value any) error {
 	f.log = append(f.log, fmt.Sprintf("UDV set with (%s,%v)", key, value))
 	return nil
 }
@@ -447,11 +486,6 @@ func (f *loggingVCursor) ExecuteMultiShard(rss []*srvtopo.ResolvedShard, queries
 
 func (f *loggingVCursor) AutocommitApproval() bool {
 	return true
-}
-
-func (f *loggingVCursor) SubmitOnlineDDL(onlineDDL *schema.OnlineDDL) error {
-	f.log = append(f.log, fmt.Sprintf("SubmitOnlineDDL: %s", onlineDDL.ToString()))
-	return nil
 }
 
 func (f *loggingVCursor) ExecuteStandalone(query string, bindvars map[string]*querypb.BindVariable, rs *srvtopo.ResolvedShard) (*sqltypes.Result, error) {
@@ -686,9 +720,12 @@ func (f *loggingVCursor) nextResult() (*sqltypes.Result, error) {
 	return r, nil
 }
 
-func (f *loggingVCursor) GetEnableSetVar() bool {
-	f.log = append(f.log, fmt.Sprintf("SET_VAR enabled: %v", !f.disableSetVar))
-	return !f.disableSetVar
+func (f *loggingVCursor) CanUseSetVar() bool {
+	useSetVar := sqlparser.IsMySQL80AndAbove() && !f.disableSetVar
+	if useSetVar {
+		f.log = append(f.log, "SET_VAR can be used")
+	}
+	return useSetVar
 }
 
 func expectResult(t *testing.T, msg string, result, want *sqltypes.Result) {

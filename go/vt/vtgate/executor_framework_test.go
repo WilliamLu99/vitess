@@ -140,15 +140,7 @@ var executorVSchema = `
 			"params": {
 				"region_bytes": "1"
 			}
-    	},
-		"multicol_vdx": {
-			"type": "multicol",
-			"params": {
-				"column_count": "3",
-				"column_bytes": "1,3,4",
-				"column_vindex": "hash,binary,unicode_loose_xxhash"
-			}
-        }
+    	}
 	},
 	"tables": {
 		"user": {
@@ -328,15 +320,7 @@ var executorVSchema = `
 					"name": "regional_vdx"
 				}
 			]
-    	},
-		"multicoltbl": {
-			"column_vindexes": [
-				{
-					"columns": ["cola","colb","colc"],
-					"name": "multicol_vdx"
-				}
-			]
-		}
+    	}
 	}
 }
 `
@@ -438,52 +422,12 @@ func newKeyRangeLookuperUnique(name string, params map[string]string) (vindexes.
 func init() {
 	vindexes.Register("keyrange_lookuper", newKeyRangeLookuper)
 	vindexes.Register("keyrange_lookuper_unique", newKeyRangeLookuperUnique)
-	// Use legacy gateway until we can rewrite these tests to use new tabletgateway
-	*GatewayImplementation = GatewayImplementationDiscovery
-}
-
-func createLegacyExecutorEnv() (executor *Executor, sbc1, sbc2, sbclookup *sandboxconn.SandboxConn) {
-	// Use legacy gateway until we can rewrite these tests to use new tabletgateway
-	*GatewayImplementation = GatewayImplementationDiscovery
-	cell := "aa"
-	hc := discovery.NewFakeLegacyHealthCheck()
-	s := createSandbox("TestExecutor")
-	s.VSchema = executorVSchema
-	serv := newSandboxForCells([]string{cell})
-	resolver := newTestLegacyResolver(hc, serv, cell)
-	sbc1 = hc.AddTestTablet(cell, "-20", 1, "TestExecutor", "-20", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	sbc2 = hc.AddTestTablet(cell, "40-60", 1, "TestExecutor", "40-60", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	// Create these connections so scatter queries don't fail.
-	_ = hc.AddTestTablet(cell, "20-40", 1, "TestExecutor", "20-40", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	_ = hc.AddTestTablet(cell, "60-80", 1, "TestExecutor", "60-80", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	_ = hc.AddTestTablet(cell, "80-a0", 1, "TestExecutor", "80-a0", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	_ = hc.AddTestTablet(cell, "a0-c0", 1, "TestExecutor", "a0-c0", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	_ = hc.AddTestTablet(cell, "c0-e0", 1, "TestExecutor", "c0-e0", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	_ = hc.AddTestTablet(cell, "e0-", 1, "TestExecutor", "e0-", topodatapb.TabletType_PRIMARY, true, 1, nil)
-	// Below is needed so that SendAnyWherePlan doesn't fail
-	_ = hc.AddTestTablet(cell, "e0-", 1, "TestXBadVSchema", "-20", topodatapb.TabletType_PRIMARY, true, 1, nil)
-
-	createSandbox(KsTestUnsharded)
-	sbclookup = hc.AddTestTablet(cell, "0", 1, KsTestUnsharded, "0", topodatapb.TabletType_PRIMARY, true, 1, nil)
-
-	// Ues the 'X' in the name to ensure it's not alphabetically first.
-	// Otherwise, it would become the default keyspace for the dual table.
-	bad := createSandbox("TestXBadSharding")
-	bad.VSchema = badVSchema
-
-	getSandbox(KsTestUnsharded).VSchema = unshardedVSchema
-	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false)
-
-	key.AnyShardPicker = DestinationAnyShardPickerFirstShard{}
-	return executor, sbc1, sbc2, sbclookup
 }
 
 func createExecutorEnv() (executor *Executor, sbc1, sbc2, sbclookup *sandboxconn.SandboxConn) {
-	// Use legacy gateway until we can rewrite these tests to use new tabletgateway
-	*GatewayImplementation = tabletGatewayImplementation
 	cell := "aa"
 	hc := discovery.NewFakeHealthCheck(nil)
-	s := createSandbox("TestExecutor")
+	s := createSandbox(KsTestSharded)
 	s.VSchema = executorVSchema
 	serv := newSandboxForCells([]string{cell})
 	resolver := newTestResolver(hc, serv, cell)
@@ -496,6 +440,8 @@ func createExecutorEnv() (executor *Executor, sbc1, sbc2, sbclookup *sandboxconn
 	_ = hc.AddTestTablet(cell, "a0-c0", 1, "TestExecutor", "a0-c0", topodatapb.TabletType_PRIMARY, true, 1, nil)
 	_ = hc.AddTestTablet(cell, "c0-e0", 1, "TestExecutor", "c0-e0", topodatapb.TabletType_PRIMARY, true, 1, nil)
 	_ = hc.AddTestTablet(cell, "e0-", 1, "TestExecutor", "e0-", topodatapb.TabletType_PRIMARY, true, 1, nil)
+	// Below is needed so that SendAnyWherePlan doesn't fail
+	_ = hc.AddTestTablet(cell, "random", 1, "TestXBadVSchema", "-20", topodatapb.TabletType_PRIMARY, true, 1, nil)
 
 	createSandbox(KsTestUnsharded)
 	_ = topo.NewShardInfo(KsTestUnsharded, "0", &topodatapb.Shard{}, nil)
@@ -523,19 +469,23 @@ func createExecutorEnv() (executor *Executor, sbc1, sbc2, sbclookup *sandboxconn
 	bad.VSchema = badVSchema
 
 	getSandbox(KsTestUnsharded).VSchema = unshardedVSchema
-	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false)
+	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false, querypb.ExecuteOptions_V3)
 
 	key.AnyShardPicker = DestinationAnyShardPickerFirstShard{}
+	// create a new session each time so that ShardSessions don't get re-used across tests
+	primarySession = &vtgatepb.Session{
+		TargetString: "@primary",
+	}
 	return executor, sbc1, sbc2, sbclookup
 }
 
 func createCustomExecutor(vschema string) (executor *Executor, sbc1, sbc2, sbclookup *sandboxconn.SandboxConn) {
 	cell := "aa"
-	hc := discovery.NewFakeLegacyHealthCheck()
-	s := createSandbox("TestExecutor")
+	hc := discovery.NewFakeHealthCheck(nil)
+	s := createSandbox(KsTestSharded)
 	s.VSchema = vschema
 	serv := newSandboxForCells([]string{cell})
-	resolver := newTestLegacyResolver(hc, serv, cell)
+	resolver := newTestResolver(hc, serv, cell)
 	sbc1 = hc.AddTestTablet(cell, "-20", 1, "TestExecutor", "-20", topodatapb.TabletType_PRIMARY, true, 1, nil)
 	sbc2 = hc.AddTestTablet(cell, "40-60", 1, "TestExecutor", "40-60", topodatapb.TabletType_PRIMARY, true, 1, nil)
 
@@ -543,17 +493,21 @@ func createCustomExecutor(vschema string) (executor *Executor, sbc1, sbc2, sbclo
 	sbclookup = hc.AddTestTablet(cell, "0", 1, KsTestUnsharded, "0", topodatapb.TabletType_PRIMARY, true, 1, nil)
 	getSandbox(KsTestUnsharded).VSchema = unshardedVSchema
 
-	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false)
+	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false, querypb.ExecuteOptions_V3)
+	// create a new session each time so that ShardSessions don't get re-used across tests
+	primarySession = &vtgatepb.Session{
+		TargetString: "@primary",
+	}
 	return executor, sbc1, sbc2, sbclookup
 }
 
 func createCustomExecutorSetValues(vschema string, values []*sqltypes.Result) (executor *Executor, sbc1, sbc2, sbclookup *sandboxconn.SandboxConn) {
 	cell := "aa"
-	hc := discovery.NewFakeLegacyHealthCheck()
-	s := createSandbox("TestExecutor")
+	hc := discovery.NewFakeHealthCheck(nil)
+	s := createSandbox(KsTestSharded)
 	s.VSchema = vschema
 	serv := newSandboxForCells([]string{cell})
-	resolver := newTestLegacyResolver(hc, serv, cell)
+	resolver := newTestResolver(hc, serv, cell)
 	shards := []string{"-20", "20-40", "40-60", "60-80", "80-a0", "a0-c0", "c0-e0", "e0-"}
 	sbcs := []*sandboxconn.SandboxConn{}
 	for _, shard := range shards {
@@ -568,7 +522,11 @@ func createCustomExecutorSetValues(vschema string, values []*sqltypes.Result) (e
 	sbclookup = hc.AddTestTablet(cell, "0", 1, KsTestUnsharded, "0", topodatapb.TabletType_PRIMARY, true, 1, nil)
 	getSandbox(KsTestUnsharded).VSchema = unshardedVSchema
 
-	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false)
+	executor = NewExecutor(context.Background(), serv, cell, resolver, false, false, testBufferSize, cache.DefaultConfig, nil, false, querypb.ExecuteOptions_V3)
+	// create a new session each time so that ShardSessions don't get re-used across tests
+	primarySession = &vtgatepb.Session{
+		TargetString: "@primary",
+	}
 	return executor, sbcs[0], sbcs[1], sbclookup
 }
 
@@ -652,7 +610,11 @@ func assertQueriesWithSavepoint(t *testing.T, sbc *sandboxconn.SandboxConn, want
 			if !strings.HasPrefix(expected, "savepoint") {
 				t.Fatal("savepoint expected")
 			}
-			savepointStore[expected[10:]] = got[10:]
+			if sp, exists := savepointStore[expected[10:]]; exists {
+				assert.Equal(t, sp, got[10:])
+			} else {
+				savepointStore[expected[10:]] = got[10:]
+			}
 			continue
 		}
 		if strings.HasPrefix(got, "rollback to") {
@@ -681,8 +643,8 @@ func testNonZeroDuration(t *testing.T, what, d string) {
 	}
 }
 
-func getQueryLog(logChan chan interface{}) *LogStats {
-	var log interface{}
+func getQueryLog(logChan chan any) *LogStats {
+	var log any
 
 	select {
 	case log = <-logChan:
@@ -699,29 +661,11 @@ func getQueryLog(logChan chan interface{}) *LogStats {
 // is a repeat query.
 var testPlannedQueries = map[string]bool{}
 
-func testQueryLog(t *testing.T, logChan chan interface{}, method, stmtType, sql string, shardQueries int) *LogStats {
+func testQueryLog(t *testing.T, logChan chan any, method, stmtType, sql string, shardQueries int) *LogStats {
 	t.Helper()
 
-	return testQueryLogWithSavepoint(t, logChan, method, stmtType, sql, shardQueries, false /* checkSavepoint */)
-}
-
-func testQueryLogWithSavepoint(t *testing.T, logChan chan interface{}, method, stmtType, sql string, shardQueries int, checkSavepoint bool) *LogStats {
-	t.Helper()
-
-	var logStats *LogStats
-
-	if checkSavepoint {
-		logStats = getQueryLog(logChan)
-		require.NotNil(t, logStats)
-	} else {
-		for {
-			logStats = getQueryLog(logChan)
-			require.NotNil(t, logStats)
-			if logStats.Method != "MarkSavepoint" {
-				break
-			}
-		}
-	}
+	logStats := getQueryLog(logChan)
+	require.NotNil(t, logStats)
 
 	var log bytes.Buffer
 	streamlog.GetFormatter(QueryLogger)(&log, nil, logStats)
@@ -735,11 +679,9 @@ func testQueryLogWithSavepoint(t *testing.T, logChan chan interface{}, method, s
 	checkEqualQuery := true
 	// The internal savepoints are created with uuids so the value of it not known to assert.
 	// Therefore, the equal query check is ignored.
-	if checkSavepoint {
-		switch stmtType {
-		case "SAVEPOINT", "SAVEPOINT_ROLLBACK", "RELEASE":
-			checkEqualQuery = false
-		}
+	switch stmtType {
+	case "SAVEPOINT", "SAVEPOINT_ROLLBACK", "RELEASE":
+		checkEqualQuery = false
 	}
 	// only test the durations if there is no error (fields[16])
 	if fields[16] == "\"\"" {
@@ -782,11 +724,6 @@ func testQueryLogWithSavepoint(t *testing.T, logChan chan interface{}, method, s
 	return logStats
 }
 
-func newTestLegacyResolver(hc discovery.LegacyHealthCheck, serv srvtopo.Server, cell string) *Resolver {
-	sc := newTestLegacyScatterConn(hc, serv, cell)
-	srvResolver := srvtopo.NewResolver(serv, sc.gateway, cell)
-	return NewResolver(srvResolver, serv, cell, sc)
-}
 func newTestResolver(hc discovery.HealthCheck, serv srvtopo.Server, cell string) *Resolver {
 	sc := newTestScatterConn(hc, serv, cell)
 	srvResolver := srvtopo.NewResolver(serv, sc.gateway, cell)

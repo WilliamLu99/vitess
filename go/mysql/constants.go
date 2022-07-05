@@ -423,6 +423,7 @@ const (
 	ErSPNotVarArg                   = 1414
 	ERInnodbReadOnly                = 1874
 	ERMasterFatalReadingBinlog      = 1236
+	ERNoDefaultForField             = 1364
 
 	// already exists
 	ERTableExists    = 1050
@@ -534,9 +535,25 @@ const (
 	ERTableNameNotAllowedHere      = 1250
 	ERQueryInterrupted             = 1317
 	ERTruncatedWrongValueForField  = 1366
+	ERIllegalValueForType          = 1367
 	ERDataTooLong                  = 1406
+	ErrWrongValueForType           = 1411
+	ERWarnDataTruncated            = 1265
 	ERForbidSchemaChange           = 1450
 	ERDataOutOfRange               = 1690
+	ERInvalidJSONText              = 3140
+	ERInvalidJSONTextInParams      = 3141
+	ERInvalidJSONBinaryData        = 3142
+	ERInvalidJSONCharset           = 3144
+	ERInvalidCastToJSON            = 3147
+	ERJSONValueTooBig              = 3150
+	ERJSONDocumentTooDeep          = 3157
+
+	ErrCantCreateGeometryObject      = 1416
+	ErrGISDataWrongEndianess         = 3055
+	ErrNotImplementedForCartesianSRS = 3704
+	ErrNotImplementedForProjectedSRS = 3705
+	ErrNonPositiveRadius             = 3706
 
 	// server not available
 	ERServerIsntAvailable = 3168
@@ -614,6 +631,7 @@ var CharacterSetEncoding = map[string]encoding.Encoding{
 	"gbk":     simplifiedchinese.GBK,
 	"latin5":  charmap.ISO8859_9,
 	"utf8":    nil,
+	"utf8mb3": nil,
 	"cp866":   charmap.CodePage866,
 	"cp852":   charmap.CodePage852,
 	"latin7":  charmap.ISO8859_13,
@@ -679,4 +697,34 @@ func IsSchemaApplyError(err error) bool {
 		return true
 	}
 	return false
+}
+
+type ReplicationState int
+
+const (
+	ReplicationStateUnknown ReplicationState = iota
+	ReplicationStateStopped
+	ReplicationStateConnecting
+	ReplicationStateRunning
+)
+
+// ReplicationStatusToState converts a value you have for the IO thread(s) or SQL
+// thread(s) or Group Replication applier thread(s) from MySQL or intermediate
+// layers to a mysql.ReplicationState.
+// on,yes,true == ReplicationStateRunning
+// off,no,false == ReplicationStateStopped
+// connecting == ReplicationStateConnecting
+// anything else == ReplicationStateUnknown
+func ReplicationStatusToState(s string) ReplicationState {
+	// Group Replication uses ON instead of Yes
+	switch strings.ToLower(s) {
+	case "yes", "on", "true":
+		return ReplicationStateRunning
+	case "no", "off", "false":
+		return ReplicationStateStopped
+	case "connecting":
+		return ReplicationStateConnecting
+	default:
+		return ReplicationStateUnknown
+	}
 }

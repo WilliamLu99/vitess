@@ -24,6 +24,8 @@ import (
 	"path"
 	"time"
 
+	"vitess.io/vitess/go/vt/proto/vschema"
+
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/dbconfigs"
 	"vitess.io/vitess/go/vt/grpcclient"
@@ -143,6 +145,23 @@ func CreateTablet(
 		tm:  tm,
 	}
 	return nil
+}
+
+// InitRoutingRules saves the routing rules into ts and reloads the vschema.
+func InitRoutingRules(
+	ctx context.Context,
+	ts *topo.Server,
+	rr *vschema.RoutingRules,
+) error {
+	if rr == nil {
+		return nil
+	}
+
+	if err := ts.SaveRoutingRules(ctx, rr); err != nil {
+		return err
+	}
+
+	return ts.RebuildSrvVSchema(ctx, nil)
 }
 
 // InitTabletMap creates the action tms and associated data structures
@@ -720,6 +739,10 @@ func (itc *internalTabletConn) VStreamResults(
 // internalTabletManagerClient implements tmclient.TabletManagerClient
 type internalTabletManagerClient struct{}
 
+func (itmc *internalTabletManagerClient) VDiff(ctx context.Context, tablet *topodatapb.Tablet, req *tabletmanagerdatapb.VDiffRequest) (*tabletmanagerdatapb.VDiffResponse, error) {
+	return nil, fmt.Errorf("VDiff not implemented in vtcombo")
+}
+
 func (itmc *internalTabletManagerClient) LockTables(ctx context.Context, tablet *topodatapb.Tablet) error {
 	return fmt.Errorf("not implemented in vtcombo")
 }
@@ -845,16 +868,8 @@ func (itmc *internalTabletManagerClient) ExecuteFetchAsApp(context.Context, *top
 	return nil, fmt.Errorf("not implemented in vtcombo")
 }
 
-func (itmc *internalTabletManagerClient) MasterStatus(context.Context, *topodatapb.Tablet) (*replicationdatapb.PrimaryStatus, error) {
-	return nil, fmt.Errorf("not implemented in vtcombo")
-}
-
 func (itmc *internalTabletManagerClient) PrimaryStatus(context.Context, *topodatapb.Tablet) (*replicationdatapb.PrimaryStatus, error) {
 	return nil, fmt.Errorf("not implemented in vtcombo")
-}
-
-func (itmc *internalTabletManagerClient) MasterPosition(context.Context, *topodatapb.Tablet) (string, error) {
-	return "", fmt.Errorf("not implemented in vtcombo")
 }
 
 func (itmc *internalTabletManagerClient) PrimaryPosition(context.Context, *topodatapb.Tablet) (string, error) {
@@ -881,10 +896,6 @@ func (itmc *internalTabletManagerClient) ResetReplication(context.Context, *topo
 	return fmt.Errorf("not implemented in vtcombo")
 }
 
-func (itmc *internalTabletManagerClient) InitMaster(context.Context, *topodatapb.Tablet, bool) (string, error) {
-	return "", fmt.Errorf("not implemented in vtcombo")
-}
-
 func (itmc *internalTabletManagerClient) InitPrimary(context.Context, *topodatapb.Tablet, bool) (string, error) {
 	return "", fmt.Errorf("not implemented in vtcombo")
 }
@@ -893,23 +904,11 @@ func (itmc *internalTabletManagerClient) PopulateReparentJournal(context.Context
 	return fmt.Errorf("not implemented in vtcombo")
 }
 
-func (itmc *internalTabletManagerClient) DemoteMaster(context.Context, *topodatapb.Tablet) (*replicationdatapb.PrimaryStatus, error) {
-	return nil, fmt.Errorf("not implemented in vtcombo")
-}
-
-func (itmc *internalTabletManagerClient) UndoDemoteMaster(context.Context, *topodatapb.Tablet, bool) error {
-	return fmt.Errorf("not implemented in vtcombo")
-}
-
 func (itmc *internalTabletManagerClient) DemotePrimary(context.Context, *topodatapb.Tablet) (*replicationdatapb.PrimaryStatus, error) {
 	return nil, fmt.Errorf("not implemented in vtcombo")
 }
 
 func (itmc *internalTabletManagerClient) UndoDemotePrimary(context.Context, *topodatapb.Tablet, bool) error {
-	return fmt.Errorf("not implemented in vtcombo")
-}
-
-func (itmc *internalTabletManagerClient) SetMaster(context.Context, *topodatapb.Tablet, *topodatapb.TabletAlias, int64, string, bool, bool) error {
 	return fmt.Errorf("not implemented in vtcombo")
 }
 
@@ -940,6 +939,10 @@ func (itmc *internalTabletManagerClient) ReplicationStatus(context.Context, *top
 	return nil, fmt.Errorf("not implemented in vtcombo")
 }
 
+func (itmc *internalTabletManagerClient) FullStatus(context.Context, *topodatapb.Tablet) (*replicationdatapb.FullStatus, error) {
+	return nil, fmt.Errorf("not implemented in vtcombo")
+}
+
 func (itmc *internalTabletManagerClient) StopReplication(context.Context, *topodatapb.Tablet) error {
 	return fmt.Errorf("not implemented in vtcombo")
 }
@@ -965,6 +968,10 @@ func (itmc *internalTabletManagerClient) InitReplica(context.Context, *topodatap
 }
 
 func (itmc *internalTabletManagerClient) ReplicaWasPromoted(context.Context, *topodatapb.Tablet) error {
+	return fmt.Errorf("not implemented in vtcombo")
+}
+
+func (itmc *internalTabletManagerClient) ResetReplicationParameters(context.Context, *topodatapb.Tablet) error {
 	return fmt.Errorf("not implemented in vtcombo")
 }
 

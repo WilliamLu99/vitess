@@ -29,12 +29,14 @@ var (
 
 const (
 	declarativeFlag        = "declarative"
-	skipTopoFlag           = "skip-topo"
+	skipTopoFlag           = "skip-topo" // legacy. Kept for backwards compatibility, but unused
 	singletonFlag          = "singleton"
 	singletonContextFlag   = "singleton-context"
 	allowZeroInDateFlag    = "allow-zero-in-date"
 	postponeCompletionFlag = "postpone-completion"
 	allowConcurrentFlag    = "allow-concurrent"
+	fastOverRevertibleFlag = "fast-over-revertible"
+	fastRangeRotationFlag  = "fast-range-rotation"
 	vreplicationTestSuite  = "vreplication-test-suite"
 )
 
@@ -150,9 +152,25 @@ func (setting *DDLStrategySetting) IsAllowConcurrent() bool {
 	return setting.hasFlag(allowConcurrentFlag)
 }
 
+// IsFastOverRevertibleFlag checks if strategy options include -fast-over-revertible
+func (setting *DDLStrategySetting) IsFastOverRevertibleFlag() bool {
+	return setting.hasFlag(fastOverRevertibleFlag)
+}
+
+// IsFastRangeRotationFlag checks if strategy options include -fast-range-rotation
+func (setting *DDLStrategySetting) IsFastRangeRotationFlag() bool {
+	return setting.hasFlag(fastRangeRotationFlag)
+}
+
 // IsVreplicationTestSuite checks if strategy options include -vreplicatoin-test-suite
 func (setting *DDLStrategySetting) IsVreplicationTestSuite() bool {
 	return setting.hasFlag(vreplicationTestSuite)
+}
+
+// IsSkipTopoFlag returns 'true' if strategy options include `-skip-topo`. This flag is deprecated,
+// and this function is temporary in v14 so that we can print a deprecation message.
+func (setting *DDLStrategySetting) IsSkipTopoFlag() bool {
+	return setting.hasFlag(skipTopoFlag)
 }
 
 // RuntimeOptions returns the options used as runtime flags for given strategy, removing any internal hint options
@@ -168,20 +186,14 @@ func (setting *DDLStrategySetting) RuntimeOptions() []string {
 		case isFlag(opt, allowZeroInDateFlag):
 		case isFlag(opt, postponeCompletionFlag):
 		case isFlag(opt, allowConcurrentFlag):
+		case isFlag(opt, fastOverRevertibleFlag):
+		case isFlag(opt, fastRangeRotationFlag):
 		case isFlag(opt, vreplicationTestSuite):
 		default:
 			validOpts = append(validOpts, opt)
 		}
 	}
 	return validOpts
-}
-
-// IsSkipTopo suggests that DDL should apply to tables bypassing global topo request
-func (setting *DDLStrategySetting) IsSkipTopo() bool {
-	// Vitess 11 introduced the flag -skip-topo. starting Vitess 12 the flag is _always_ considered 'true'.
-	// Ideally the flag should be gone, but for backwards compatibility we allow users to still specify it
-	// (and we stil ignore the value, it's always set to true)
-	return true
 }
 
 // ToString returns a simple string representation of this instance

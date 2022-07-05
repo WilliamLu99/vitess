@@ -51,7 +51,7 @@ func TestOrderedAggregateExecute(t *testing.T) {
 
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0}},
@@ -88,7 +88,7 @@ func TestOrderedAggregateExecuteTruncate(t *testing.T) {
 
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys:         []*GroupByParams{{KeyCol: 2}},
@@ -130,7 +130,7 @@ func TestOrderedAggregateStreamExecute(t *testing.T) {
 
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0}},
@@ -173,7 +173,7 @@ func TestOrderedAggregateStreamExecuteTruncate(t *testing.T) {
 
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys:         []*GroupByParams{{KeyCol: 2}},
@@ -314,7 +314,7 @@ func TestOrderedAggregateExecuteCountDistinct(t *testing.T) {
 			Alias:  "count(distinct col2)",
 		}, {
 			// Also add a count(*)
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    2,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0}},
@@ -390,7 +390,7 @@ func TestOrderedAggregateStreamCountDistinct(t *testing.T) {
 			Alias:  "count(distinct col2)",
 		}, {
 			// Also add a count(*)
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    2,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0}},
@@ -561,7 +561,7 @@ func TestOrderedAggregateKeysFail(t *testing.T) {
 
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0}},
@@ -594,7 +594,7 @@ func TestOrderedAggregateMergeFail(t *testing.T) {
 
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0}},
@@ -634,7 +634,7 @@ func TestMerge(t *testing.T) {
 	assert := assert.New(t)
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}, {
 			Opcode: AggregateSum,
@@ -656,92 +656,15 @@ func TestMerge(t *testing.T) {
 		"1|3|2.8|2|bc",
 	)
 
-	merged, _, err := oa.merge(fields, r.Rows[0], r.Rows[1], nil, nil)
+	merged, _, err := merge(fields, r.Rows[0], r.Rows[1], nil, nil, oa.Aggregates)
 	assert.NoError(err)
 	want := sqltypes.MakeTestResult(fields, "1|5|6.0|2|bc").Rows[0]
 	assert.Equal(want, merged)
 
 	// swap and retry
-	merged, _, err = oa.merge(fields, r.Rows[1], r.Rows[0], nil, nil)
+	merged, _, err = merge(fields, r.Rows[1], r.Rows[0], nil, nil, oa.Aggregates)
 	assert.NoError(err)
 	assert.Equal(want, merged)
-}
-
-func TestNoInputAndNoGroupingKeys(outer *testing.T) {
-	testCases := []struct {
-		name        string
-		opcode      AggregateOpcode
-		expectedVal string
-		expectedTyp string
-	}{{
-		"count(distinct col1)",
-		AggregateCountDistinct,
-		"0",
-		"int64",
-	}, {
-		"col1",
-		AggregateCount,
-		"0",
-		"int64",
-	}, {
-		"sum(distinct col1)",
-		AggregateSumDistinct,
-		"null",
-		"decimal",
-	}, {
-		"col1",
-		AggregateSum,
-		"null",
-		"int64",
-	}, {
-		"col1",
-		AggregateMax,
-		"null",
-		"int64",
-	}, {
-		"col1",
-		AggregateMin,
-		"null",
-		"int64",
-	}}
-
-	for _, test := range testCases {
-		outer.Run(test.name, func(t *testing.T) {
-			assert := assert.New(t)
-			fp := &fakePrimitive{
-				results: []*sqltypes.Result{sqltypes.MakeTestResult(
-					sqltypes.MakeTestFields(
-						"col1",
-						"int64",
-					),
-					// Empty input table
-				)},
-			}
-
-			oa := &OrderedAggregate{
-				PreProcess: true,
-				Aggregates: []*AggregateParams{{
-					Opcode: test.opcode,
-					Col:    0,
-					Alias:  test.name,
-				}},
-				GroupByKeys: []*GroupByParams{},
-				Input:       fp,
-			}
-
-			result, err := oa.TryExecute(&noopVCursor{}, nil, false)
-			assert.NoError(err)
-
-			wantResult := sqltypes.MakeTestResult(
-				sqltypes.MakeTestFields(
-					test.name,
-					test.expectedTyp,
-				),
-				test.expectedVal,
-			)
-			assert.Equal(wantResult, result)
-		})
-	}
 }
 
 func TestOrderedAggregateExecuteGtid(t *testing.T) {
@@ -756,7 +679,6 @@ func TestOrderedAggregateExecuteGtid(t *testing.T) {
 		Shard:    "80-",
 		Gtid:     "b",
 	})
-	fmt.Println(vgtid.String())
 
 	fp := &fakePrimitive{
 		results: []*sqltypes.Result{sqltypes.MakeTestResult(
@@ -1079,7 +1001,7 @@ func TestOrderedAggregateCollate(t *testing.T) {
 	collationID, _ := collations.Local().LookupID("utf8mb4_0900_ai_ci")
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0, CollationID: collationID}},
@@ -1122,7 +1044,7 @@ func TestOrderedAggregateCollateAS(t *testing.T) {
 	collationID, _ := collations.Local().LookupID("utf8mb4_0900_as_ci")
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0, CollationID: collationID}},
@@ -1167,7 +1089,7 @@ func TestOrderedAggregateCollateKS(t *testing.T) {
 	collationID, _ := collations.Local().LookupID("utf8mb4_ja_0900_as_cs_ks")
 	oa := &OrderedAggregate{
 		Aggregates: []*AggregateParams{{
-			Opcode: AggregateCount,
+			Opcode: AggregateSum,
 			Col:    1,
 		}},
 		GroupByKeys: []*GroupByParams{{KeyCol: 0, CollationID: collationID}},

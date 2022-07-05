@@ -60,9 +60,7 @@ func TestQPS(t *testing.T) {
 	//       after that we'll see 0.0 QPS rates again. If this becomes actually
 	//       flaky, we need to read continuously in a separate thread.
 
-	n := 0
-	for n < 15 {
-		n++
+	for n := 0; n < 15; n++ {
 		// Run queries via vtGate so that they are counted.
 		utils.Exec(t, vtGateConn, "select * from t1")
 	}
@@ -73,7 +71,7 @@ func TestQPS(t *testing.T) {
 	var qpsIncreased bool
 	timeout := time.Now().Add(12 * time.Second)
 	for time.Now().Before(timeout) {
-		result, err := clusterInstance.VtctlclientProcess.ExecuteCommandWithOutput("VtTabletStreamHealth", "-count", "1", primaryTablet.Alias)
+		result, err := clusterInstance.VtctlclientProcess.ExecuteCommandWithOutput("VtTabletStreamHealth", "--", "--count", "1", primaryTablet.Alias)
 		require.Nil(t, err)
 		var streamHealthResponse querypb.StreamHealthResponse
 
