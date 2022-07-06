@@ -11,3 +11,4 @@ releases
 /vtdataroot/
 /web/vtadmin/node_modules
 /web/vtadmin/build
+**/.git
