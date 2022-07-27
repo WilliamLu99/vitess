@@ -212,6 +212,18 @@ type TabletManagerClient interface {
 	RestoreFromBackup(ctx context.Context, tablet *topodatapb.Tablet, backupTime time.Time) (logutil.EventStream, error)
 
 	//
+	// Throttler related methods
+	//
+
+	ThrottlerCheck(ctx context.Context) error
+	ThrottlerCheckSelf(ctx context.Context) error
+
+	// ThrottlerStatus
+	// ThrottleApp
+	// ThrottledApps
+	// UnthrottleApp
+
+	//
 	// Management methods
 	//
 
