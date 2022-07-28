@@ -216,8 +216,8 @@ type TabletManagerClient interface {
 	// Throttler related methods
 	//
 
-	ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet) (error, base.CheckResult)
-	ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb.Tablet) (error, base.CheckResult)
+	ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet) (*base.CheckResult, error)
+	ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb.Tablet) (*base.CheckResult, error)
 
 	// ThrottlerStatus
 	// ThrottleApp
