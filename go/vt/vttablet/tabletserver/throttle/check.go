@@ -51,7 +51,7 @@ func NewThrottlerCheck(throttler *Throttler) *ThrottlerCheck {
 }
 
 // checkAppMetricResult allows an app to check on a metric
-func (check *ThrottlerCheck) checkAppMetricResult(ctx context.Context, appName string, storeType string, storeName string, metricResultFunc base.MetricResultFunc, flags *CheckFlags) (checkResult *CheckResult) {
+func (check *ThrottlerCheck) checkAppMetricResult(ctx context.Context, appName string, storeType string, storeName string, metricResultFunc base.MetricResultFunc, flags *CheckFlags) (checkResult *base.CheckResult) {
 	// Handle deprioritized app logic
 	denyApp := false
 	metricName := fmt.Sprintf("%s/%s", storeType, storeName)
@@ -69,7 +69,7 @@ func (check *ThrottlerCheck) checkAppMetricResult(ctx context.Context, appName s
 	}
 	value, err := metricResult.Get()
 	if appName == "" {
-		return NewCheckResult(http.StatusExpectationFailed, value, threshold, fmt.Errorf("no app indicated"))
+		return base.NewCheckResult(http.StatusExpectationFailed, value, threshold, fmt.Errorf("no app indicated"))
 	}
 
 	var statusCode int
@@ -96,11 +96,11 @@ func (check *ThrottlerCheck) checkAppMetricResult(ctx context.Context, appName s
 		// all good!
 		statusCode = http.StatusOK // 200
 	}
-	return NewCheckResult(statusCode, value, threshold, err)
+	return base.NewCheckResult(statusCode, value, threshold, err)
 }
 
 // Check is the core function that runs when a user wants to check a metric
-func (check *ThrottlerCheck) Check(ctx context.Context, appName string, storeType string, storeName string, remoteAddr string, flags *CheckFlags) (checkResult *CheckResult) {
+func (check *ThrottlerCheck) Check(ctx context.Context, appName string, storeType string, storeName string, remoteAddr string, flags *CheckFlags) (checkResult *base.CheckResult) {
 	var metricResultFunc base.MetricResultFunc
 	switch storeType {
 	case "mysql":
@@ -111,7 +111,7 @@ func (check *ThrottlerCheck) Check(ctx context.Context, appName string, storeTyp
 		}
 	}
 	if metricResultFunc == nil {
-		return NoSuchMetricCheckResult
+		return base.NoSuchMetricCheckResult
 	}
 
 	checkResult = check.checkAppMetricResult(ctx, appName, storeType, storeName, metricResultFunc, flags)
@@ -150,10 +150,10 @@ func (check *ThrottlerCheck) splitMetricTokens(metricName string) (storeType str
 }
 
 // localCheck
-func (check *ThrottlerCheck) localCheck(ctx context.Context, metricName string) (checkResult *CheckResult) {
+func (check *ThrottlerCheck) localCheck(ctx context.Context, metricName string) (checkResult *base.CheckResult) {
 	storeType, storeName, err := check.splitMetricTokens(metricName)
 	if err != nil {
-		return NoSuchMetricCheckResult
+		return base.NoSuchMetricCheckResult
 	}
 	checkResult = check.Check(ctx, frenoAppName, storeType, storeName, "local", StandardCheckFlags)
 

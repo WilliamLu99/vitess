@@ -4,12 +4,10 @@
  Licensed under MIT License. See https://github.com/github/freno/blob/master/LICENSE
 */
 
-package throttle
+package base
 
 import (
 	"net/http"
-
-	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/base"
 )
 
 // CheckResult is the result for an app inquiring on a metric. It also exports as JSON via the API
@@ -41,8 +39,4 @@ func NewErrorCheckResult(statusCode int, err error) *CheckResult {
 }
 
 // NoSuchMetricCheckResult is a result returns when a metric is unknown
-var NoSuchMetricCheckResult = NewErrorCheckResult(http.StatusNotFound, base.ErrNoSuchMetric)
-
-var okMetricCheckResult = NewCheckResult(http.StatusOK, 0, 0, nil)
-
-var invalidCheckTypeCheckResult = NewErrorCheckResult(http.StatusInternalServerError, base.ErrInvalidCheckType)
+var NoSuchMetricCheckResult = NewErrorCheckResult(http.StatusNotFound, ErrNoSuchMetric)

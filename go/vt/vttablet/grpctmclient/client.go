@@ -36,6 +36,7 @@ import (
 	"vitess.io/vitess/go/vt/logutil"
 	"vitess.io/vitess/go/vt/mysqlctl/tmutils"
 	"vitess.io/vitess/go/vt/topo/topoproto"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle"
 	"vitess.io/vitess/go/vt/vttablet/tmclient"
 
 	logutilpb "vitess.io/vitess/go/vt/proto/logutil"
@@ -966,6 +967,36 @@ func (client *Client) RestoreFromBackup(ctx context.Context, tablet *topodatapb.
 		stream: stream,
 		closer: closer,
 	}, nil
+}
+
+// Throttler related methods
+
+func (client *Client) ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet) (error, throttle.CheckResult) {
+	c, closer, err := client.dialer.dial(ctx, tablet)
+	if err != nil {
+		return nil, err
+	}
+	defer closer.Close()
+
+	resposne, err := c.ThrottlerCheck(ctx, &tabletmanagerdatapb.ThrottlerCheckRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return response.CheckResult, hil
+}
+
+func (client *Client) ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb.Tablet) (error, throttle.CheckResult) {
+	c, closer, err := client.dialer.dial(ctx, tablet)
+	if err != nil {
+		return nil, err
+	}
+	defer closer.Close()
+
+	resposne, err := c.ThrottlerCheck(ctx, &tabletmanagerdatapb.ThrottlerCheckSelfRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return response.CheckResult, hil
 }
 
 // Close is part of the tmclient.TabletManagerClient interface.

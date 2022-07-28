@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
 
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 
@@ -58,6 +60,7 @@ import (
 
 	binlogdatapb "vitess.io/vitess/go/vt/proto/binlogdata"
 	querypb "vitess.io/vitess/go/vt/proto/query"
+	"vitess.io/vitess/go/vt/proto/topodata"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vtgatepb "vitess.io/vitess/go/vt/proto/vtgate"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
@@ -73,6 +76,8 @@ var (
 
 	queriesProcessedByTable = stats.NewCountersWithMultiLabels("QueriesProcessedByTable", "Queries processed at vtgate by plan type, keyspace and table", []string{"Plan", "Keyspace", "Table"})
 	queriesRoutedByTable    = stats.NewCountersWithMultiLabels("QueriesRoutedByTable", "Queries routed from vtgate to vttablet by plan type, keyspace and table", []string{"Plan", "Keyspace", "Table"})
+
+	throttlerCheckProtocol = flag.String("throttler_check_protocol", "http", "Either http or grpc. Unauthenticated HTTP or Tablet Manager GRPC")
 )
 
 const (
@@ -92,6 +97,7 @@ type Executor struct {
 	scatterConn *ScatterConn
 	txConn      *TxConn
 	pv          plancontext.PlannerVersion
+	tmc         tmclient.TabletManagerClient
 
 	mu           sync.Mutex
 	vschema      *vindexes.VSchema
@@ -141,6 +147,7 @@ func NewExecutor(
 		schemaTracker:   schemaTracker,
 		allowScatter:    !noScatter,
 		pv:              pv,
+		tmc:             tmclient.NewTabletManagerClient(),
 	}
 
 	vschemaacl.Init()
@@ -853,7 +860,15 @@ func (e *Executor) showVitessReplicationStatus(ctx context.Context, filter *sqlp
 			}
 
 			tabletHostPort := ts.GetTabletHostPort()
-			throttlerStatus, err := getTabletThrottlerStatus(tabletHostPort)
+			throttlerStatus := ""
+			var err error
+			if *throttlerCheckProtocol == "http" {
+				throttlerStatus, err = getTabletThrottlerStatusHTTP(tabletHostPort)
+			} else if *throttlerCheckProtocol == "grpc" {
+				throttlerStatus, err = e.getTabletThrottlerStatusGRPC(ctx, ts.Tablet)
+			} else {
+				panic("wat")
+			}
 			if err != nil {
 				log.Warningf("Could not get throttler status from %s: %v", tabletHostPort, err)
 			}
@@ -1355,7 +1370,12 @@ func (e *Executor) checkThatPlanIsValid(stmt sqlparser.Statement, plan *engine.P
 	return vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "plan includes scatter, which is disallowed using the `no_scatter` command line argument")
 }
 
-func getTabletThrottlerStatus(tabletHostPort string) (string, error) {
+func (e *Executor) getTabletThrottlerStatusGRPC(ctx context.Context, tablet *topodata.Tablet) (string, error) {
+	e.tmc.ThrottlerCheck(ctx, tablet)
+	return "", nil
+}
+
+func getTabletThrottlerStatusHTTP(tabletHostPort string) (string, error) {
 	client := http.Client{
 		Timeout: 100 * time.Millisecond,
 	}

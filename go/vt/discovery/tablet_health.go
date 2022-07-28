@@ -100,6 +100,13 @@ func (th *TabletHealth) GetTabletHostPort() string {
 	return netutil.JoinHostPort(hostname, vtPort)
 }
 
+// GetTabletHostPort formats a tablet host port address for the grpc server
+func (th *TabletHealth) GetTabletHostPortGrpc() string {
+	hostname := th.Tablet.Hostname
+	vtPort := th.Tablet.PortMap["grpc"]
+	return netutil.JoinHostPort(hostname, vtPort)
+}
+
 // GetHostNameLevel returns the specified hostname level. If the level does not exist it will pick the closest level.
 // This seems unused but can be utilized by certain url formatting templates. See getTabletDebugURL for more details.
 func (th *TabletHealth) GetHostNameLevel(level int) string {

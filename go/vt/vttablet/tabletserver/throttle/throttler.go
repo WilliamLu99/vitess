@@ -26,6 +26,7 @@ import (
 	"vitess.io/vitess/go/textutil"
 	"vitess.io/vitess/go/timer"
 	"vitess.io/vitess/go/vt/log"
+	"vitess.io/vitess/go/vt/proto/topodata"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/connpool"
@@ -34,6 +35,7 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/base"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/config"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/mysql"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
 
 	"github.com/patrickmn/go-cache"
 )
@@ -67,10 +69,13 @@ var (
 	throttleMetricQuery       = flag.String("throttle_metrics_query", "", "Override default heartbeat/lag metric. Use either `SELECT` (must return single row, single value) or `SHOW GLOBAL ... LIKE ...` queries. Set -throttle_metrics_threshold respectively.")
 	throttleMetricThreshold   = flag.Float64("throttle_metrics_threshold", math.MaxFloat64, "Override default throttle threshold, respective to -throttle_metrics_query")
 	throttlerCheckAsCheckSelf = flag.Bool("throttle_check_as_check_self", false, "Should throttler/check return a throttler/check-self result (changes throttler behavior for writes)")
+	throttlerProbeProtocol    = flag.String("throttler_probe_protocol", "http", "Either http or grpc. Unauthenticated HTTP or Tablet Manager GRPC")
 
 	replicationLagQuery = `select unix_timestamp(now(6))-max(ts/1000000000) as replication_lag from _vt.heartbeat`
 
-	ErrThrottlerNotReady = errors.New("throttler not enabled/ready")
+	ErrThrottlerNotReady        = errors.New("throttler not enabled/ready")
+	okMetricCheckResult         = base.NewCheckResult(http.StatusOK, 0, 0, nil)
+	invalidCheckTypeCheckResult = base.NewErrorCheckResult(http.StatusInternalServerError, base.ErrInvalidCheckType)
 )
 
 // ThrottleCheckType allows a client to indicate what type of check it wants to issue. See available types below.
@@ -130,6 +135,7 @@ type Throttler struct {
 
 	nonLowPriorityAppRequestsThrottled *cache.Cache
 	httpClient                         *http.Client
+	tmc                                tmclient.TabletManagerClient
 }
 
 // ThrottlerStatus published some status values from the throttler
@@ -182,6 +188,7 @@ func NewThrottler(env tabletenv.Env, ts *topo.Server, heartbeatWriter heartbeat.
 		throttler.nonLowPriorityAppRequestsThrottled = cache.New(nonDeprioritizedAppMapExpiration, nonDeprioritizedAppMapInterval)
 
 		throttler.httpClient = base.SetupHTTPClient(2 * mysqlCollectInterval)
+		throttler.tmc = tmclient.NewTabletManagerClient()
 		throttler.initThrottleTabletTypes()
 		throttler.ThrottleApp("always-throttled-app", time.Now().Add(time.Hour*24*365*10), defaultThrottleRatio)
 		throttler.check = NewThrottlerCheck(throttler)
@@ -478,6 +485,14 @@ func (throttler *Throttler) Operate(ctx context.Context) {
 	}
 }
 
+func (throttler *Throttler) generateTabletGRPCProbeFunction(ctx context.Context, clusterName string, probe *mysql.Probe) (probeFunc func() *mysql.MySQLThrottleMetric) {
+	return func() *mysql.MySQLThrottleMetric {
+		// TODO: how to pass tablet as *topodata.Tablet? should we make a fake one? Hmmmmmm
+		throttler.tmc.ThrottlerCheck(ctx, &topodata.Tablet{})
+		return nil
+	}
+}
+
 func (throttler *Throttler) generateTabletHTTPProbeFunction(ctx context.Context, clusterName string, probe *mysql.Probe) (probeFunc func() *mysql.MySQLThrottleMetric) {
 	return func() *mysql.MySQLThrottleMetric {
 		// Hit a tablet's `check-self` via HTTP, and convert its CheckResult JSON output into a MySQLThrottleMetric
@@ -496,7 +511,7 @@ func (throttler *Throttler) generateTabletHTTPProbeFunction(ctx context.Context,
 			mySQLThrottleMetric.Err = err
 			return mySQLThrottleMetric
 		}
-		checkResult := &CheckResult{}
+		checkResult := &base.CheckResult{}
 		if err := json.Unmarshal(b, checkResult); err != nil {
 			mySQLThrottleMetric.Err = err
 			return mySQLThrottleMetric
@@ -532,7 +547,11 @@ func (throttler *Throttler) collectMySQLMetrics(ctx context.Context) error {
 					if clusterName == selfStoreName {
 						throttleMetricFunc = throttler.readSelfMySQLThrottleMetric
 					} else {
-						throttleMetricFunc = throttler.generateTabletHTTPProbeFunction(ctx, clusterName, probe)
+						if *throttlerProbeProtocol == "http" {
+							throttleMetricFunc = throttler.generateTabletHTTPProbeFunction(ctx, clusterName, probe)
+						} else if *throttlerProbeProtocol == "grpc" {
+							throttleMetricFunc = throttler.generateTabletGRPCProbeFunction(ctx, clusterName, probe)
+						}
 					}
 					throttleMetrics := mysql.ReadThrottleMetric(probe, clusterName, throttleMetricFunc)
 					throttler.mysqlThrottleMetricChan <- throttleMetrics
@@ -808,7 +827,7 @@ func (throttler *Throttler) AppRequestMetricResult(ctx context.Context, appName 
 }
 
 // checkStore checks the aggregated value of given MySQL store
-func (throttler *Throttler) checkStore(ctx context.Context, appName string, storeName string, remoteAddr string, flags *CheckFlags) (checkResult *CheckResult) {
+func (throttler *Throttler) checkStore(ctx context.Context, appName string, storeName string, remoteAddr string, flags *CheckFlags) (checkResult *base.CheckResult) {
 	if !throttler.env.Config().EnableLagThrottler {
 		return okMetricCheckResult
 	}
@@ -816,17 +835,17 @@ func (throttler *Throttler) checkStore(ctx context.Context, appName string, stor
 }
 
 // checkShard checks the health of the shard, and runs on the primary tablet only
-func (throttler *Throttler) checkShard(ctx context.Context, appName string, remoteAddr string, flags *CheckFlags) (checkResult *CheckResult) {
+func (throttler *Throttler) checkShard(ctx context.Context, appName string, remoteAddr string, flags *CheckFlags) (checkResult *base.CheckResult) {
 	return throttler.checkStore(ctx, appName, shardStoreName, remoteAddr, flags)
 }
 
 // CheckSelf is checks the mysql/self metric, and is available on each tablet
-func (throttler *Throttler) checkSelf(ctx context.Context, appName string, remoteAddr string, flags *CheckFlags) (checkResult *CheckResult) {
+func (throttler *Throttler) checkSelf(ctx context.Context, appName string, remoteAddr string, flags *CheckFlags) (checkResult *base.CheckResult) {
 	return throttler.checkStore(ctx, appName, selfStoreName, remoteAddr, flags)
 }
 
 // CheckByType runs a check by requested check type
-func (throttler *Throttler) CheckByType(ctx context.Context, appName string, remoteAddr string, flags *CheckFlags, checkType ThrottleCheckType) (checkResult *CheckResult) {
+func (throttler *Throttler) CheckByType(ctx context.Context, appName string, remoteAddr string, flags *CheckFlags, checkType ThrottleCheckType) (checkResult *base.CheckResult) {
 	go throttler.heartbeatWriter.RequestHeartbeats()
 	switch checkType {
 	case ThrottleCheckSelf:

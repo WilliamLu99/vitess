@@ -26,6 +26,7 @@ import (
 	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/logutil"
 	"vitess.io/vitess/go/vt/mysqlctl/tmutils"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/base"
 
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	replicationdatapb "vitess.io/vitess/go/vt/proto/replicationdata"
@@ -215,8 +216,8 @@ type TabletManagerClient interface {
 	// Throttler related methods
 	//
 
-	ThrottlerCheck(ctx context.Context) error
-	ThrottlerCheckSelf(ctx context.Context) error
+	ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet) (error, base.CheckResult)
+	ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb.Tablet) (error, base.CheckResult)
 
 	// ThrottlerStatus
 	// ThrottleApp
