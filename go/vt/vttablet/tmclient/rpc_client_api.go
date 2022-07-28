@@ -216,7 +216,9 @@ type TabletManagerClient interface {
 	// Throttler related methods
 	//
 
+	// TODO comment
 	ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet) (*base.CheckResult, error)
+	// TODO comment
 	ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb.Tablet) (*base.CheckResult, error)
 
 	// ThrottlerStatus

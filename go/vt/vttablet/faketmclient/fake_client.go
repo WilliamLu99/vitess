@@ -31,6 +31,7 @@ import (
 	"vitess.io/vitess/go/vt/hook"
 	"vitess.io/vitess/go/vt/logutil"
 	"vitess.io/vitess/go/vt/mysqlctl/tmutils"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/base"
 	"vitess.io/vitess/go/vt/vttablet/tmclient"
 
 	logutilpb "vitess.io/vitess/go/vt/proto/logutil"
@@ -332,6 +333,20 @@ func (client *FakeTabletManagerClient) Backup(ctx context.Context, tablet *topod
 // RestoreFromBackup is part of the tmclient.TabletManagerClient interface.
 func (client *FakeTabletManagerClient) RestoreFromBackup(ctx context.Context, tablet *topodatapb.Tablet, backupTime time.Time) (logutil.EventStream, error) {
 	return &eofEventStream{}, nil
+}
+
+//
+// Throttler related methods
+//
+
+// TODO comment
+func (client *FakeTabletManagerClient) ThrottlerCheckSelf(context.Context, *topodatapb.Tablet) (*base.CheckResult, error) {
+	return &base.CheckResult{}, nil
+}
+
+// TODO comment
+func (client *FakeTabletManagerClient) ThrottlerCheck(context.Context, *topodatapb.Tablet) (*base.CheckResult, error) {
+	return &base.CheckResult{}, nil
 }
 
 //

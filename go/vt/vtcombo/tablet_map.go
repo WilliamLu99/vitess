@@ -44,6 +44,7 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tabletconn"
 	"vitess.io/vitess/go/vt/vttablet/tabletmanager"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle/base"
 	"vitess.io/vitess/go/vt/vttablet/tmclient"
 	"vitess.io/vitess/go/vt/wrangler"
 
@@ -977,4 +978,12 @@ func (itmc *internalTabletManagerClient) ResetReplicationParameters(context.Cont
 
 func (itmc *internalTabletManagerClient) ReplicaWasRestarted(context.Context, *topodatapb.Tablet, *topodatapb.TabletAlias) error {
 	return fmt.Errorf("not implemented in vtcombo")
+}
+
+func (itmc *internalTabletManagerClient) ThrottlerCheckSelf(context.Context, *topodatapb.Tablet) (*base.CheckResult, error) {
+	return nil, fmt.Errorf("not implemented in vtcombo")
+}
+
+func (itmc *internalTabletManagerClient) ThrottlerCheck(context.Context, *topodatapb.Tablet) (*base.CheckResult, error) {
+	return nil, fmt.Errorf("not implemented in vtcombo")
 }

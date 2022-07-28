@@ -18,6 +18,7 @@ package grpctmclient
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -982,7 +983,13 @@ func (client *Client) ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tab
 	if err != nil {
 		return nil, err
 	}
-	return response.CheckResult, nil
+	return &base.CheckResult{
+		StatusCode: int(response.StatusCode),
+		Value:      float64(response.Value),
+		Threshold:  float64(response.Threshold),
+		Error:      errors.New(response.Error),
+		Message:    response.Message,
+	}, nil
 }
 
 func (client *Client) ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb.Tablet) (*base.CheckResult, error) {
@@ -992,11 +999,17 @@ func (client *Client) ThrottlerCheckSelf(ctx context.Context, tablet *topodatapb
 	}
 	defer closer.Close()
 
-	response, err := c.ThrottlerCheck(ctx, &tabletmanagerdatapb.ThrottlerCheckSelfRequest{})
+	response, err := c.ThrottlerCheckSelf(ctx, &tabletmanagerdatapb.ThrottlerCheckSelfRequest{})
 	if err != nil {
 		return nil, err
 	}
-	return response.CheckResult, nil
+	return &base.CheckResult{
+		StatusCode: int(response.StatusCode),
+		Value:      float64(response.Value),
+		Threshold:  float64(response.Threshold),
+		Error:      errors.New(response.Error),
+		Message:    response.Message,
+	}, nil
 }
 
 // Close is part of the tmclient.TabletManagerClient interface.

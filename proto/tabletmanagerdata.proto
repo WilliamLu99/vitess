@@ -483,6 +483,22 @@ message RestoreFromBackupResponse {
   logutil.Event event = 1;
 }
 
+// Throttler related messages
+
+message ThrottlerCheckRequest {
+}
+
+message ThrottlerCheckSelfRequest {
+}
+
+message ThrottlerCheckResponse {
+  int64 status_code = 1;
+  float value = 2;
+  float threshold = 3;
+  string error = 4;
+  string message = 5;
+}
+
 message VExecRequest {
   string query = 1;
   string workflow = 2;

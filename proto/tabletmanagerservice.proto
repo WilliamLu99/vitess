@@ -172,6 +172,15 @@ service TabletManager {
   // RestoreFromBackup deletes all local data and restores it from the latest backup.
   rpc RestoreFromBackup(tabletmanagerdata.RestoreFromBackupRequest) returns (stream tabletmanagerdata.RestoreFromBackupResponse) {};
 
+  //
+  // Throttler related methods
+  //
+
+  // TODO Comment
+  rpc ThrottlerCheck(tabletmanagerdata.ThrottlerCheckRequest) returns (tabletmanagerdata.ThrottlerCheckResponse) {};
+  // TODO Comment
+  rpc ThrottlerCheckSelf(tabletmanagerdata.ThrottlerCheckSelfRequest) returns (tabletmanagerdata.ThrottlerCheckResponse) {};
+
   // Generic VExec request. Can be used for various purposes
   rpc VExec(tabletmanagerdata.VExecRequest) returns(tabletmanagerdata.VExecResponse) {};
 }

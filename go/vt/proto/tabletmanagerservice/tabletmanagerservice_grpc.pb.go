@@ -104,6 +104,10 @@ type TabletManagerClient interface {
 	Backup(ctx context.Context, in *tabletmanagerdata.BackupRequest, opts ...grpc.CallOption) (TabletManager_BackupClient, error)
 	// RestoreFromBackup deletes all local data and restores it from the latest backup.
 	RestoreFromBackup(ctx context.Context, in *tabletmanagerdata.RestoreFromBackupRequest, opts ...grpc.CallOption) (TabletManager_RestoreFromBackupClient, error)
+	// TODO Comment
+	ThrottlerCheck(ctx context.Context, in *tabletmanagerdata.ThrottlerCheckRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ThrottlerCheckResponse, error)
+	// TODO Comment
+	ThrottlerCheckSelf(ctx context.Context, in *tabletmanagerdata.ThrottlerCheckSelfRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ThrottlerCheckResponse, error)
 	// Generic VExec request. Can be used for various purposes
 	VExec(ctx context.Context, in *tabletmanagerdata.VExecRequest, opts ...grpc.CallOption) (*tabletmanagerdata.VExecResponse, error)
 }
@@ -576,6 +580,24 @@ func (x *tabletManagerRestoreFromBackupClient) Recv() (*tabletmanagerdata.Restor
 	return m, nil
 }
 
+func (c *tabletManagerClient) ThrottlerCheck(ctx context.Context, in *tabletmanagerdata.ThrottlerCheckRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ThrottlerCheckResponse, error) {
+	out := new(tabletmanagerdata.ThrottlerCheckResponse)
+	err := c.cc.Invoke(ctx, "/tabletmanagerservice.TabletManager/ThrottlerCheck", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tabletManagerClient) ThrottlerCheckSelf(ctx context.Context, in *tabletmanagerdata.ThrottlerCheckSelfRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ThrottlerCheckResponse, error) {
+	out := new(tabletmanagerdata.ThrottlerCheckResponse)
+	err := c.cc.Invoke(ctx, "/tabletmanagerservice.TabletManager/ThrottlerCheckSelf", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *tabletManagerClient) VExec(ctx context.Context, in *tabletmanagerdata.VExecRequest, opts ...grpc.CallOption) (*tabletmanagerdata.VExecResponse, error) {
 	out := new(tabletmanagerdata.VExecResponse)
 	err := c.cc.Invoke(ctx, "/tabletmanagerservice.TabletManager/VExec", in, out, opts...)
@@ -670,6 +692,10 @@ type TabletManagerServer interface {
 	Backup(*tabletmanagerdata.BackupRequest, TabletManager_BackupServer) error
 	// RestoreFromBackup deletes all local data and restores it from the latest backup.
 	RestoreFromBackup(*tabletmanagerdata.RestoreFromBackupRequest, TabletManager_RestoreFromBackupServer) error
+	// TODO Comment
+	ThrottlerCheck(context.Context, *tabletmanagerdata.ThrottlerCheckRequest) (*tabletmanagerdata.ThrottlerCheckResponse, error)
+	// TODO Comment
+	ThrottlerCheckSelf(context.Context, *tabletmanagerdata.ThrottlerCheckSelfRequest) (*tabletmanagerdata.ThrottlerCheckResponse, error)
 	// Generic VExec request. Can be used for various purposes
 	VExec(context.Context, *tabletmanagerdata.VExecRequest) (*tabletmanagerdata.VExecResponse, error)
 	mustEmbedUnimplementedTabletManagerServer()
@@ -816,6 +842,12 @@ func (UnimplementedTabletManagerServer) Backup(*tabletmanagerdata.BackupRequest,
 }
 func (UnimplementedTabletManagerServer) RestoreFromBackup(*tabletmanagerdata.RestoreFromBackupRequest, TabletManager_RestoreFromBackupServer) error {
 	return status.Errorf(codes.Unimplemented, "method RestoreFromBackup not implemented")
+}
+func (UnimplementedTabletManagerServer) ThrottlerCheck(context.Context, *tabletmanagerdata.ThrottlerCheckRequest) (*tabletmanagerdata.ThrottlerCheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ThrottlerCheck not implemented")
+}
+func (UnimplementedTabletManagerServer) ThrottlerCheckSelf(context.Context, *tabletmanagerdata.ThrottlerCheckSelfRequest) (*tabletmanagerdata.ThrottlerCheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ThrottlerCheckSelf not implemented")
 }
 func (UnimplementedTabletManagerServer) VExec(context.Context, *tabletmanagerdata.VExecRequest) (*tabletmanagerdata.VExecResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VExec not implemented")
@@ -1667,6 +1699,42 @@ func (x *tabletManagerRestoreFromBackupServer) Send(m *tabletmanagerdata.Restore
 	return x.ServerStream.SendMsg(m)
 }
 
+func _TabletManager_ThrottlerCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(tabletmanagerdata.ThrottlerCheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TabletManagerServer).ThrottlerCheck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/tabletmanagerservice.TabletManager/ThrottlerCheck",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TabletManagerServer).ThrottlerCheck(ctx, req.(*tabletmanagerdata.ThrottlerCheckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TabletManager_ThrottlerCheckSelf_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(tabletmanagerdata.ThrottlerCheckSelfRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TabletManagerServer).ThrottlerCheckSelf(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/tabletmanagerservice.TabletManager/ThrottlerCheckSelf",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TabletManagerServer).ThrottlerCheckSelf(ctx, req.(*tabletmanagerdata.ThrottlerCheckSelfRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TabletManager_VExec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(tabletmanagerdata.VExecRequest)
 	if err := dec(in); err != nil {
@@ -1867,6 +1935,14 @@ var TabletManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PromoteReplica",
 			Handler:    _TabletManager_PromoteReplica_Handler,
+		},
+		{
+			MethodName: "ThrottlerCheck",
+			Handler:    _TabletManager_ThrottlerCheck_Handler,
+		},
+		{
+			MethodName: "ThrottlerCheckSelf",
+			Handler:    _TabletManager_ThrottlerCheckSelf_Handler,
 		},
 		{
 			MethodName: "VExec",
