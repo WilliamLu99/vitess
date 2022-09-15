@@ -574,6 +574,7 @@ func (e *Executor) parseAlterOptions(ctx context.Context, onlineDDL *schema.Onli
 
 // executeDirectly runs a DDL query directly on the backend MySQL server
 func (e *Executor) executeDirectly(ctx context.Context, onlineDDL *schema.OnlineDDL, acceptableMySQLErrorCodes ...int) (acceptableErrorCodeFound bool, err error) {
+	log.Infof("Running migration %s on dbname: %s", onlineDDL.SQL, e.env.Config().DB.DBName)
 	conn, err := dbconnpool.NewDBConnection(ctx, e.env.Config().DB.DbaWithDB())
 	if err != nil {
 		return false, err
