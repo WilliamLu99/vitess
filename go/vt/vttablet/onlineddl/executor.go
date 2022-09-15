@@ -2892,7 +2892,16 @@ func (e *Executor) runNextMigration(ctx context.Context) error {
 	// - a migration is 'ready' but is not set to run _concurrently_, and there's a running migration that is also non-concurrent
 	// - a migration is 'ready' but there's another migration 'running' on the exact same table
 	getNonConflictingMigration := func() (*schema.OnlineDDL, error) {
-		r, err := e.execQuery(ctx, sqlSelectReadyMigrations)
+		query, err := sqlparser.ParseAndBind(
+			sqlSelectReadyMigrations,
+			sqltypes.StringBindVariable(e.keyspace),
+			sqltypes.StringBindVariable(e.shard),
+			sqltypes.StringBindVariable(e.dbName),
+		)
+		if err != nil {
+			return nil, err
+		}
+		r, err := e.execQuery(ctx, query)
 		if err != nil {
 			return nil, err
 		}

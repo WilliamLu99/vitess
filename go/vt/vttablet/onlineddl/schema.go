@@ -421,6 +421,9 @@ const (
 		FROM _vt.schema_migrations
 		WHERE
 			migration_status='ready'
+			AND keyspace=%a
+			AND shard=%a
+			AND mysql_schema=%a
 		ORDER BY id
 	`
 	sqlSelectPTOSCMigrationTriggers = `SELECT
