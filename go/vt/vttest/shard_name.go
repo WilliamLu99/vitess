@@ -26,16 +26,16 @@ import (
 // -80, shard 1 is 80-.  This function currently only applies to sharding setups
 // where the shard count is 256 or less, and all shards are equal width.
 func GetShardName(shard, total int) string {
-	width := 0x100 / total
+	width := 0x10000 / total
 	switch {
 	case total == 1:
 		return "0"
 	case shard == 0:
-		return fmt.Sprintf("-%02x", width)
+		return fmt.Sprintf("-%04x", width)
 	case shard == total-1:
-		return fmt.Sprintf("%02x-", shard*width)
+		return fmt.Sprintf("%04x-", shard*width)
 	default:
-		return fmt.Sprintf("%02x-%02x", shard*width, (shard+1)*width)
+		return fmt.Sprintf("%04x-%04x", shard*width, (shard+1)*width)
 	}
 }
 
