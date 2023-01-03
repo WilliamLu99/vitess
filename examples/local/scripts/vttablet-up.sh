@@ -56,6 +56,10 @@ vttablet \
  --pid_file $VTDATAROOT/$tablet_dir/vttablet.pid \
  --vtctld_addr http://$hostname:$vtctld_web_port/ \
  --disable_active_reparents \
+ --enforce-tableacl-config \
+ --queryserver-config-strict-table-acl \
+ --table-acl-config table_acl.json \
+ --table-acl-config-reload-interval 1s \
  > $VTDATAROOT/$tablet_dir/vttablet.out 2>&1 &
 
 # Block waiting for the tablet to be listening

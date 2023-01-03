@@ -1,0 +1,11 @@
+{
+  "table_groups": [
+    {
+      "name": "default",
+      "table_names_or_prefixes": ["%"],
+      "readers": ["mysql_user", "vitess_rw", "vitess_ro"],
+      "writers": ["mysql_user", "vitess_rw"],
+      "admins": ["mysql_user", "vitess_rw"]
+    }
+  ]
+}

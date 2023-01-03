@@ -1,6 +1,14 @@
 [
   {
-    "Username": "vitess",
-    "Password": "vitess_password"
+    "Username": "vitess_ro",
+    "Password": "vitess"
+  },
+  {
+    "Username": "vitess_rw",
+    "Password": "vitess"
+  },
+  {
+    "Username": "other_user",
+    "Password": "vitess"
   }
 ]

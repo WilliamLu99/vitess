@@ -39,7 +39,10 @@ vtgate \
   --tablet_types_to_wait PRIMARY,REPLICA \
   --service_map 'grpc-vtgateservice' \
   --pid_file $VTDATAROOT/tmp/vtgate.pid \
-  --mysql_auth_server_impl none \
+  --mysql_auth_server_impl static \
+  --mysql_auth_server_static_file mysql_auth_server_static_creds.json \
+  --grpc_auth_mode static \
+  --grpc_auth_static_password_file grpc_static_auth.json \
   > $VTDATAROOT/tmp/vtgate.out 2>&1 &
 
 # Block waiting for vtgate to be listening
