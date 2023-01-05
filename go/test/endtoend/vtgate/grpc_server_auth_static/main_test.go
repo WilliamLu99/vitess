@@ -143,7 +143,7 @@ func TestAuthenticatedUserWithAccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	vtgateConn, err := dialVTGate(ctx, t, "user_with_access", "test_password")
+	vtgateConn, err := dialVTGate(ctx, t, "user_with_access", "wrong")
 	if err != nil {
 		t.Fatal(err)
 	}
