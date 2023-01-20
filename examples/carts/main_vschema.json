@@ -1,0 +1,45 @@
+{
+  "sharded": true,
+  "vindexes": {
+    "carts_multicol": {
+      "type": "multicol",
+      "params": {
+        "column_count": "2",
+        "column_bytes": "2,6",
+        "column_vindex": "binary,xxhash"
+      }
+    },
+    "carts_placement": {
+      "type": "placement",
+      "params": {
+        "placement_map": "us-east1:0,asia-southeast1:65535",
+        "placement_prefix_bytes": "2",
+        "placement_sub_vindex_type": "xxhash"
+      }
+    }
+  },
+  "tables": {
+    "carts_multicol": {
+      "columnVindexes": [
+        {
+          "columns": [
+            "region",
+            "uid"
+          ],
+          "name": "carts_multicol"
+        }
+      ]
+    },
+    "carts_placement": {
+      "columnVindexes": [
+        {
+          "columns": [
+            "region",
+            "uid"
+          ],
+          "name": "carts_placement"
+        }
+      ]
+    }
+  }
+}
