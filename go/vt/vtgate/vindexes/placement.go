@@ -34,6 +34,9 @@ import (
 	"strconv"
 	"strings"
 
+	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
+
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/key"
 )
@@ -156,18 +159,30 @@ func (p *Placement) NeedsVCursor() bool {
 }
 
 func (p *Placement) PartialVindex() bool {
-	return false
+	return true
+}
+
+func makeDestinationPrefix(value uint64, prefixBytes int) []byte {
+	destinationPrefix := make([]byte, 8)
+	binary.BigEndian.PutUint64(destinationPrefix, value)
+	if prefixBytes < 8 {
+		// Shorten the prefix to the desired length.
+		destinationPrefix = destinationPrefix[(8 - prefixBytes):]
+	}
+
+	return destinationPrefix
 }
 
 func (p *Placement) Map(ctx context.Context, vcursor VCursor, rowsColValues [][]sqltypes.Value) ([]key.Destination, error) {
 	destinations := make([]key.Destination, 0, len(rowsColValues))
 
 	for _, row := range rowsColValues {
-		if len(row) != 2 {
-			destinations = append(destinations, key.DestinationNone{})
-			continue
+		if len(row) != 1 && len(row) != 2 {
+			return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "wrong number of column values were passed: expected 1-2, got %d", len(row))
 		}
 
+		// Calculate the destination prefix from the placement key which will be the same whether this is a partial
+		// or full usage of the Vindex.
 		placementKey := row[0].ToString()
 		placementDestinationValue, placementMappingFound := p.placementMap[placementKey]
 		if !placementMappingFound {
@@ -175,21 +190,20 @@ func (p *Placement) Map(ctx context.Context, vcursor VCursor, rowsColValues [][]
 			continue
 		}
 
-		placementDestinationPrefix := make([]byte, 8)
-		binary.BigEndian.PutUint64(placementDestinationPrefix, placementDestinationValue)
-		if p.prefixBytes < 8 {
-			// Shorten the prefix to the desired length.
-			placementDestinationPrefix = placementDestinationPrefix[(8 - p.prefixBytes):]
-		}
+		placementDestinationPrefix := makeDestinationPrefix(placementDestinationValue, p.prefixBytes)
 
-		subVindexValue, hashingError := p.subVindex.(Hashing).Hash(row[1])
-		if hashingError != nil {
-			return nil, hashingError // TODO: Should we be less fatal here and use DestinationNone?
-		}
+		if len(row) == 1 { // Partial Vindex usage with only the placement column provided.
+			destinations = append(destinations, NewKeyRangeFromPrefix(placementDestinationPrefix))
+		} else if len(row) == 2 { // Full Vindex usage with the placement column and subVindex column provided.
+			subVindexValue, hashingError := p.subVindex.(Hashing).Hash(row[1])
+			if hashingError != nil {
+				return nil, hashingError // TODO: Should we be less fatal here and use DestinationNone?
+			}
 
-		// Concatenate and add to destinations.
-		rowDestination := append(placementDestinationPrefix, subVindexValue...)
-		destinations = append(destinations, key.DestinationKeyspaceID(rowDestination[0:8]))
+			// Concatenate and add to destinations.
+			rowDestination := append(placementDestinationPrefix, subVindexValue...)
+			destinations = append(destinations, key.DestinationKeyspaceID(rowDestination[0:8]))
+		}
 	}
 
 	return destinations, nil
@@ -199,11 +213,12 @@ func (p *Placement) Verify(ctx context.Context, vcursor VCursor, rowsColValues [
 	result := make([]bool, len(rowsColValues))
 	destinations, _ := p.Map(ctx, vcursor, rowsColValues)
 	for i, destination := range destinations {
-		destinationKeyspaceID, ok := destination.(key.DestinationKeyspaceID)
-		if !ok {
-			continue
+		switch d := destination.(type) {
+		case key.DestinationKeyspaceID:
+			result[i] = bytes.Equal(d, keyspaceIDs[i])
+		default:
+			result[i] = false
 		}
-		result[i] = bytes.Equal(destinationKeyspaceID, keyspaceIDs[i])
 	}
 	return result, nil
 }

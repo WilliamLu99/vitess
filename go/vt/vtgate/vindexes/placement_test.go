@@ -288,3 +288,67 @@ func TestPlacementSubVindexNumeric(t *testing.T) {
 	}
 	assert.Equal(t, expectedDestinations, actualDestinations)
 }
+
+func TestPlacementMapPrefixOnly(t *testing.T) {
+	vindex, err := CreateVindex("placement", "placement", map[string]string{
+		"table":                     "t",
+		"from":                      "f1,f2",
+		"to":                        "toc",
+		"placement_prefix_bytes":    "1",
+		"placement_map":             "foo:1,bar:2",
+		"placement_sub_vindex_type": "xxhash",
+	})
+	assert.NoError(t, err)
+	actualDestinations, err := vindex.(MultiColumn).Map(context.Background(), nil, [][]sqltypes.Value{{
+		sqltypes.NewVarChar("foo"),
+	}, {
+		sqltypes.NewVarChar("bar"),
+	}, {
+		sqltypes.NewVarChar("xyz"),
+	}})
+	assert.NoError(t, err)
+
+	expectedDestinations := []key.Destination{
+		NewKeyRangeFromPrefix([]byte{0x01}),
+		NewKeyRangeFromPrefix([]byte{0x02}),
+		key.DestinationNone{},
+	}
+	assert.Equal(t, expectedDestinations, actualDestinations)
+}
+
+func TestPlacementMapTooManyColumns(t *testing.T) {
+	vindex, err := CreateVindex("placement", "placement", map[string]string{
+		"table":                     "t",
+		"from":                      "f1,f2",
+		"to":                        "toc",
+		"placement_prefix_bytes":    "1",
+		"placement_map":             "foo:1,bar:2",
+		"placement_sub_vindex_type": "xxhash",
+	})
+	assert.NoError(t, err)
+	actualDestinations, err := vindex.(MultiColumn).Map(context.Background(), nil, [][]sqltypes.Value{{
+		// Too many columns; expecting two, providing three.
+		sqltypes.NewVarChar("a"), sqltypes.NewVarChar("b"), sqltypes.NewVarChar("c"),
+	}})
+	assert.EqualError(t, err, "wrong number of column values were passed: expected 1-2, got 3")
+
+	assert.Nil(t, actualDestinations)
+}
+
+func TestPlacementMapNoColumns(t *testing.T) {
+	vindex, err := CreateVindex("placement", "placement", map[string]string{
+		"table":                     "t",
+		"from":                      "f1,f2",
+		"to":                        "toc",
+		"placement_prefix_bytes":    "1",
+		"placement_map":             "foo:1,bar:2",
+		"placement_sub_vindex_type": "xxhash",
+	})
+	assert.NoError(t, err)
+	actualDestinations, err := vindex.(MultiColumn).Map(context.Background(), nil, [][]sqltypes.Value{{
+		// Empty column list.
+	}})
+	assert.EqualError(t, err, "wrong number of column values were passed: expected 1-2, got 0")
+
+	assert.Nil(t, actualDestinations)
+}
