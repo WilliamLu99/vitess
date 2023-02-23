@@ -1907,6 +1907,13 @@ func TestSequence(t *testing.T) {
 					},
 				},
 			},
+			"un-sharded": {
+				Tables: map[string]*vschemapb.Table{
+					"s-eq": {
+						Type: "sequence",
+					},
+				},
+			},
 			"sharded": {
 				Sharded: true,
 				Vindexes: map[string]*vschemapb.Vindex{
@@ -1940,6 +1947,54 @@ func TestSequence(t *testing.T) {
 						AutoIncrement: &vschemapb.AutoIncrement{
 							Column:   "c2",
 							Sequence: "`unsharded`.`seq`",
+						},
+					},
+					"t3": {
+						ColumnVindexes: []*vschemapb.ColumnVindex{
+							{
+								Column: "c1",
+								Name:   "stfu1",
+							},
+						},
+						AutoIncrement: &vschemapb.AutoIncrement{
+							Column:   "c2",
+							Sequence: "unsharded.seq",
+						},
+					},
+					"_t1": {
+						ColumnVindexes: []*vschemapb.ColumnVindex{
+							{
+								Column: "c1",
+								Name:   "stfu1",
+							},
+						},
+						AutoIncrement: &vschemapb.AutoIncrement{
+							Column:   "c2",
+							Sequence: "s-eq",
+						},
+					},
+					"_t2": {
+						ColumnVindexes: []*vschemapb.ColumnVindex{
+							{
+								Column: "c1",
+								Name:   "stfu1",
+							},
+						},
+						AutoIncrement: &vschemapb.AutoIncrement{
+							Column:   "c2",
+							Sequence: "`un-sharded`.`s-eq`",
+						},
+					},
+					"_t3": {
+						ColumnVindexes: []*vschemapb.ColumnVindex{
+							{
+								Column: "c1",
+								Name:   "stfu1",
+							},
+						},
+						AutoIncrement: &vschemapb.AutoIncrement{
+							Column:   "c2",
+							Sequence: "un-sharded.s-eq",
 						},
 					},
 				},
