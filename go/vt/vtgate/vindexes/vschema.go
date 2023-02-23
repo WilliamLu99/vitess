@@ -647,10 +647,27 @@ func resolveAutoIncrement(source *vschemapb.SrvVSchema, vschema *VSchema) {
 			if t == nil || table.AutoIncrement == nil {
 				continue
 			}
-			seqks, seqtab, err := sqlparser.ParseTable(table.AutoIncrement.Sequence)
+
+			// we need to backtick the keyspace and table name before calling ParseTable
+			escapedInput, err := escapeQualifiedTable(table.AutoIncrement.Sequence)
+			if err != nil {
+				// Better to remove the table than to leave it partially initialized.
+				delete(ksvschema.Tables, tname)
+				delete(vschema.globalTables, tname)
+				ksvschema.Error = vterrors.Errorf(
+					vtrpcpb.Code_NOT_FOUND,
+					"malformed sequence table identifier %s: %s",
+					table.AutoIncrement.Sequence,
+					err.Error(),
+				)
+				continue
+			}
+
 			var seq *Table
+			var escapedSequenceKeyspace, escapedSequenceTable string
+			escapedSequenceKeyspace, escapedSequenceTable, err = sqlparser.ParseTable(escapedInput)
 			if err == nil {
-				seq, err = vschema.FindTable(seqks, seqtab)
+				seq, err = vschema.FindTable(escapedSequenceKeyspace, escapedSequenceTable)
 			}
 			if err != nil {
 				// Better to remove the table than to leave it partially initialized.
@@ -665,6 +682,7 @@ func resolveAutoIncrement(source *vschemapb.SrvVSchema, vschema *VSchema) {
 
 				continue
 			}
+
 			t.AutoIncrement = &AutoIncrement{
 				Column:   sqlparser.NewIdentifierCI(table.AutoIncrement.Column),
 				Sequence: seq,
