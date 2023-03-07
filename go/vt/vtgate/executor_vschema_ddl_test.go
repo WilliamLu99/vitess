@@ -474,13 +474,41 @@ func TestExecutorAddDropVindexDDL(t *testing.T) {
 		t.Fatalf("table test not defined in vschema")
 	}
 
-	qr, err = executor.Execute(context.Background(), "TestExecute", session, "show vschema vindexes on TestExecutor.test", nil)
+	// same as last case but with dashes in keyspace name
+	stmt = "alter vschema on TestExecutor.foo_table add vindex test_hash (id) using hash "
+	_, err = executor.Execute(context.Background(), "TestExecute", session, stmt, nil)
+	require.NoError(t, err)
+
+	_, vindex = waitForVindex(t, ks, "test_hash", vschemaUpdates, executor)
+	require.Equal(t, "hash", vindex.Type)
+
+	_ = waitForColVindexes(t, ks, "foo_table", []string{"test_hash"}, executor)
+
+	stmt = "alter vschema on TestExecutor.foo_table add vindex test_lookup_fqn(test_col) using consistent_lookup_unique with owner=`foo_table`, from=`test_col`, table=`test-keyspace.test_lookup_fqn`, to=`keyspace_id`"
+	_, err = executor.Execute(context.Background(), "TestExecute", session, stmt, nil)
+	require.NoError(t, err)
+
+	vschema, vindex = waitForVindex(t, ks, "test_lookup_fqn", vschemaUpdates, executor)
+	require.Equal(t, "consistent_lookup_unique", vindex.Type)
+
+	if table, ok := vschema.Keyspaces[ks].Tables["foo_table"]; ok {
+		if len(table.ColumnVindexes) != 2 {
+			t.Fatalf("table vindexes want 1 got %d", len(table.ColumnVindexes))
+		}
+		if table.ColumnVindexes[1].Name != "test_lookup_fqn" {
+			t.Fatalf("table vindexes didn't contain test_lookup_fqn")
+		}
+	} else {
+		t.Fatalf("table test not defined in vschema")
+	}
+
+	qr, err = executor.Execute(context.Background(), "TestExecute", session, "show vschema vindexes on TestExecutor.foo_table", nil)
 	require.NoError(t, err)
 	wantqr = &sqltypes.Result{
 		Fields: buildVarCharFields("Columns", "Name", "Type", "Params", "Owner"),
 		Rows: [][]sqltypes.Value{
 			buildVarCharRow("id", "test_hash", "hash", "", ""),
-			buildVarCharRow("c1, c2", "test_lookup", "lookup", "from=c1,c2; table=test_lookup; to=keyspace_id", "test"),
+			buildVarCharRow("test_col", "test_lookup_fqn", "consistent_lookup_unique", "from=test_col; table=test-keyspace.test_lookup_fqn; to=keyspace_id", "foo_table"), // TODO: fix this
 		},
 	}
 	utils.MustMatch(t, wantqr, qr)
