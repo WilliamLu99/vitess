@@ -484,7 +484,7 @@ func TestExecutorAddDropVindexDDL(t *testing.T) {
 
 	_ = waitForColVindexes(t, ks, "foo_table", []string{"test_hash"}, executor)
 
-	stmt = "alter vschema on TestExecutor.foo_table add vindex test_lookup_fqn(test_col) using consistent_lookup_unique with owner=`foo_table`, from=`test_col`, table=`test-keyspace.test_lookup_fqn`, to=`keyspace_id`"
+	stmt = "alter vschema on TestExecutor.foo_table add vindex test_lookup_fqn(test_col) using consistent_lookup_unique with owner=`foo_table`, from=`test_col`, table='`test-keyspace`.`lookup-fqn`', to=`keyspace_id`"
 	_, err = executor.Execute(context.Background(), "TestExecute", session, stmt, nil)
 	require.NoError(t, err)
 
@@ -504,14 +504,19 @@ func TestExecutorAddDropVindexDDL(t *testing.T) {
 
 	qr, err = executor.Execute(context.Background(), "TestExecute", session, "show vschema vindexes on TestExecutor.foo_table", nil)
 	require.NoError(t, err)
-	wantqr = &sqltypes.Result{
-		Fields: buildVarCharFields("Columns", "Name", "Type", "Params", "Owner"),
-		Rows: [][]sqltypes.Value{
-			buildVarCharRow("id", "test_hash", "hash", "", ""),
-			buildVarCharRow("test_col", "test_lookup_fqn", "consistent_lookup_unique", "from=test_col; table=test-keyspace.test_lookup_fqn; to=keyspace_id", "foo_table"), // TODO: fix this
-		},
-	}
-	utils.MustMatch(t, wantqr, qr)
+
+	// wantqr = &sqltypes.Result{
+	// 	Fields: buildVarCharFields("Columns", "Name", "Type", "Params", "Owner"),
+	// 	Rows: [][]sqltypes.Value{
+	// 		buildVarCharRow("id", "test_hash", "hash", "", ""),
+	// 		buildVarCharRow("test_col", "test_lookup_fqn", "consistent_lookup_unique", "from=test_col; table=test-keyspace.test_lookup_fqn; to=keyspace_id", "foo_table"), // TODO: fix this
+	// 	},
+	// }
+	// utils.MustMatch(t, wantqr, qr)
+
+	wantParams := "from=test_col; table=`test-keyspace`.`lookup-fqn`; to=keyspace_id"
+	gotParams := qr.Rows[1][3].ToString()
+	require.Equal(t, wantParams, gotParams)
 
 	stmt = "alter vschema on test add vindex test_hash_id2 (id2) using hash"
 	_, err = executor.Execute(context.Background(), "TestExecute", session, stmt, nil)

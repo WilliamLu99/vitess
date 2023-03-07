@@ -367,6 +367,21 @@ func (node *VindexSpec) ParseParams() (string, map[string]string) {
 	for _, p := range node.Params {
 		if p.Key.Lowered() == VindexOwnerStr {
 			owner = p.Val
+		} else if p.Key.Lowered() == "table" {
+			re := regexp.MustCompile(`^'(.*)'$`)
+			match := re.FindStringSubmatch(p.Val)
+			if len(match) > 1 {
+				p.Val = match[1]
+				ks, table, err := ParseTable(p.Val)
+				if err != nil {
+					// This should never happen, because the parser should have
+					// already validated the table name.
+					panic(err)
+				}
+				p.Val = fmt.Sprintf("`%s`.`%s`", ks, table)
+			}
+
+			params["table"] = p.Val
 		} else {
 			params[p.Key.String()] = p.Val
 		}
