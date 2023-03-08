@@ -484,7 +484,7 @@ func TestExecutorAddDropVindexDDL(t *testing.T) {
 
 	_ = waitForColVindexes(t, ks, "foo_table", []string{"test_hash"}, executor)
 
-	stmt = "alter vschema on TestExecutor.foo_table add vindex test_lookup_fqn(test_col) using consistent_lookup_unique with owner=`foo_table`, from=`test_col`, table='`test-keyspace`.`lookup-fqn`', to=`keyspace_id`"
+	stmt = "alter vschema on TestExecutor.foo_table add vindex test_lookup_fqn(test_col) using consistent_lookup_unique with owner=`foo_table`, from=`test_col`, table=`test-keyspace`.`lookup-fqn`, to=`keyspace_id`"
 	_, err = executor.Execute(context.Background(), "TestExecute", session, stmt, nil)
 	require.NoError(t, err)
 
