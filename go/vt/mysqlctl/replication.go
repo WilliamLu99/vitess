@@ -67,6 +67,16 @@ func WaitForReplicationStart(mysqld MysqlDaemon, replicaStartDeadline int) error
 	return nil
 }
 
+// SemiSyncExtensionLoaded checks if the semisync extension has been loaded.
+// It should work for both MariaDB and MySQL.
+func semiSyncExtensionLoaded(mysqld *Mysqld) bool {
+	qr, err := mysqld.FetchSuperQuery(context.TODO(), "SHOW GLOBAL VARIABLES LIKE 'rpl_semi_sync%'")
+	if err != nil {
+		return false
+	}
+	return len(qr.Rows) >= 1
+}
+
 // StartReplication starts replication.
 func (mysqld *Mysqld) StartReplication(hookExtraEnv map[string]string) error {
 	ctx := context.TODO()
@@ -582,6 +592,12 @@ func (mysqld *Mysqld) GetGTIDMode(ctx context.Context) (string, error) {
 // SetSemiSyncEnabled enables or disables semi-sync replication for
 // primary and/or replica mode.
 func (mysqld *Mysqld) SetSemiSyncEnabled(primary, replica bool) error {
+	// If semi-sync plugins are not loaded, skip this step.
+	if !semiSyncExtensionLoaded(mysqld) {
+		log.Infof("Semi-sync plugins are not loaded, skipping setting of semi-sync modes.")
+		return nil
+	}
+
 	log.Infof("Setting semi-sync mode: primary=%v, replica=%v", primary, replica)
 
 	// Convert bool to int.
@@ -645,6 +661,7 @@ func (mysqld *Mysqld) SemiSyncSettings() (timeout uint64, numReplicas uint32) {
 	if err != nil {
 		return 0, 0
 	}
+
 	timeout, _ = strconv.ParseUint(vars["rpl_semi_sync_master_timeout"], 10, 0)
 	numReplicasUint, _ := strconv.ParseUint(vars["rpl_semi_sync_master_wait_for_slave_count"], 10, 0)
 	return timeout, uint32(numReplicasUint)
@@ -652,14 +669,11 @@ func (mysqld *Mysqld) SemiSyncSettings() (timeout uint64, numReplicas uint32) {
 
 // SemiSyncReplicationStatus returns whether semi-sync is currently used by replication.
 func (mysqld *Mysqld) SemiSyncReplicationStatus() (bool, error) {
-	qr, err := mysqld.FetchSuperQuery(context.TODO(), "SHOW STATUS LIKE 'rpl_semi_sync_slave_status'")
+	vars, err := mysqld.fetchStatuses(context.TODO(), "rpl_semi_sync_slave_status")
 	if err != nil {
 		return false, err
 	}
-	if len(qr.Rows) != 1 {
-		return false, errors.New("no rpl_semi_sync_slave_status variable in mysql")
-	}
-	if qr.Rows[0][1].ToString() == "ON" {
+	if vars["rpl_semi_sync_slave_status"] == "ON" {
 		return true, nil
 	}
 	return false, nil

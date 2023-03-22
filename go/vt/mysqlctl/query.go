@@ -203,6 +203,9 @@ func (mysqld *Mysqld) fetchVariables(ctx context.Context, pattern string) (map[s
 	if len(qr.Fields) != 2 {
 		return nil, fmt.Errorf("query %#v returned %d columns, expected 2", query, len(qr.Fields))
 	}
+	if len(qr.Rows) == 0 {
+		return nil, fmt.Errorf(fmt.Sprintf("no variables like %s in mysql", pattern))
+	}
 	varMap := make(map[string]string, len(qr.Rows))
 	for _, row := range qr.Rows {
 		varMap[row[0].ToString()] = row[1].ToString()
@@ -220,6 +223,9 @@ func (mysqld *Mysqld) fetchStatuses(ctx context.Context, pattern string) (map[st
 	}
 	if len(qr.Fields) != 2 {
 		return nil, fmt.Errorf("query %#v returned %d columns, expected 2", query, len(qr.Fields))
+	}
+	if len(qr.Rows) == 0 {
+		return nil, fmt.Errorf(fmt.Sprintf("no status variable like %s in mysql", pattern))
 	}
 	varMap := make(map[string]string, len(qr.Rows))
 	for _, row := range qr.Rows {
