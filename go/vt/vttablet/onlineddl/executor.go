@@ -105,7 +105,7 @@ var maxConstraintNameLength = 64
 
 const (
 	maxPasswordLength                        = 32 // MySQL's *replication* password may not exceed 32 characters
-	staleMigrationMinutes                    = 180
+	staleMigrationMinutes                    = 1
 	progressPctStarted               float64 = 0
 	progressPctFull                  float64 = 100.0
 	etaSecondsUnknown                        = -1
@@ -3513,7 +3513,12 @@ func (e *Executor) reviewRunningMigrations(ctx context.Context) (countRunnning i
 					// VReplication migrations are unique in this respect: we are able to complete
 					// a vreplicaiton migration started by another tablet.
 					e.ownedRunningMigrations.Store(uuid, onlineDDL)
+
+					fmt.Printf("==> [%s] reviewRunningMigrations called (%s | %s)\n", time.Now().Format(time.StampMilli), migrationRow.AsInt64("vitess_liveness_indicator", 0), s.livenessTimeIndicator())
+
 					if lastVitessLivenessIndicator := migrationRow.AsInt64("vitess_liveness_indicator", 0); lastVitessLivenessIndicator < s.livenessTimeIndicator() {
+						fmt.Printf("==> [%s] Going to update timestamp!!!\n")
+
 						_ = e.updateMigrationTimestamp(ctx, "liveness_timestamp", uuid)
 						_ = e.updateVitessLivenessIndicator(ctx, uuid, s.livenessTimeIndicator())
 					}
@@ -3653,6 +3658,8 @@ func (e *Executor) reviewRunningMigrations(ctx context.Context) (countRunnning i
 func (e *Executor) reviewStaleMigrations(ctx context.Context) error {
 	e.migrationMutex.Lock()
 	defer e.migrationMutex.Unlock()
+
+	fmt.Println("==> reviewStaleMigrations called\n")
 
 	query, err := sqlparser.ParseAndBind(sqlSelectStaleMigrations,
 		sqltypes.Int64BindVariable(staleMigrationMinutes),
@@ -3866,6 +3873,8 @@ func (e *Executor) onMigrationCheckTick() {
 		log.Errorf("Executor.onMigrationCheckTick(): empty keyspace")
 		return
 	}
+
+	fmt.Printf("==> [%s] onMigrationCheckTick called\n", time.Now().Format(time.StampMilli))
 
 	ctx := context.Background()
 	if err := e.retryTabletFailureMigrations(ctx); err != nil {
