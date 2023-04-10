@@ -391,7 +391,11 @@ func modifyForAutoinc(ins *sqlparser.Insert, eins *engine.Insert) error {
 	colNum := findOrAddColumn(ins, eins.Table.AutoIncrement.Column)
 	eins.Generate = &engine.Generate{
 		Keyspace: eins.Table.AutoIncrement.Sequence.Keyspace,
-		Query:    fmt.Sprintf("select next :n values from %s", sqlparser.String(eins.Table.AutoIncrement.Sequence.Name)),
+		State: engine.GenerateState{ // TODO: Maybe don't initialize this since we don't have the increment/offset here?
+			Increment: 1,
+			Offset:    1,
+		},
+		Query: fmt.Sprintf("select next :n values from %s", sqlparser.String(eins.Table.AutoIncrement.Sequence.Name)),
 	}
 	switch rows := ins.Rows.(type) {
 	case sqlparser.SelectStatement:

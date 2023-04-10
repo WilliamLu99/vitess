@@ -160,10 +160,17 @@ func NewInsert(
 	}
 }
 
+type GenerateState struct {
+	Increment int64
+	Offset    int64
+	NextValue int64
+}
+
 // Generate represents the instruction to generate
 // a value from a sequence.
 type Generate struct {
 	Keyspace *vindexes.Keyspace
+	State    GenerateState
 	Query    string
 	// Values are the supplied values for the column, which
 	// will be stored as a list within the expression. New
@@ -172,6 +179,13 @@ type Generate struct {
 	Values evalengine.Expr
 	// Insert using Select, offset for auto increment column
 	Offset int
+}
+
+func (g *Generate) GenerateNextValue() int64 {
+	// TODO: Needs to handle offset properly.
+	currentValue := g.State.NextValue
+	g.State.NextValue = currentValue + g.State.Increment
+	return currentValue
 }
 
 // InsertOpcode is a number representing the opcode
@@ -528,7 +542,7 @@ func (ins *Insert) processGenerateFromValues(
 	ctx context.Context,
 	vcursor VCursor,
 	bindVars map[string]*querypb.BindVariable,
-) (insertID int64, err error) {
+) (generatorFirstValue int64, err error) {
 	if ins.Generate == nil {
 		return 0, nil
 	}
@@ -564,23 +578,35 @@ func (ins *Insert) processGenerateFromValues(
 		}
 		// If no rows are returned, it's an internal error, and the code
 		// must panic, which will be caught and reported.
-		insertID, err = evalengine.ToInt64(qr.Rows[0][0])
-		if err != nil {
-			return 0, err
+		generatorNextValue, nextValueConversionError := evalengine.ToInt64(qr.Rows[0][0])
+		if nextValueConversionError != nil {
+			return 0, nextValueConversionError
 		}
+		generatorFirstValue = generatorNextValue
+
+		generatorIncrement, incrementConversionError := evalengine.ToInt64(qr.Rows[0][1])
+		if incrementConversionError != nil {
+			return 0, incrementConversionError
+		}
+		generatorOffset, offsetConversionError := evalengine.ToInt64(qr.Rows[0][2])
+		if offsetConversionError != nil {
+			return 0, offsetConversionError
+		}
+
+		ins.Generate.State.NextValue = generatorNextValue
+		ins.Generate.State.Increment = generatorIncrement
+		ins.Generate.State.Offset = generatorOffset
 	}
 
 	// Fill the holes where no value was supplied.
-	cur := insertID
 	for i, v := range values {
 		if shouldGenerate(v) {
-			bindVars[SeqVarName+strconv.Itoa(i)] = sqltypes.Int64BindVariable(cur)
-			cur++
+			bindVars[SeqVarName+strconv.Itoa(i)] = sqltypes.Int64BindVariable(ins.Generate.GenerateNextValue())
 		} else {
 			bindVars[SeqVarName+strconv.Itoa(i)] = sqltypes.ValueBindVariable(v)
 		}
 	}
-	return insertID, nil
+	return generatorFirstValue, nil
 }
 
 // processGenerateFromRows generates new values using a sequence if necessary.

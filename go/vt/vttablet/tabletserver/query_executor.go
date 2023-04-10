@@ -82,6 +82,14 @@ var (
 			Name: "nextval",
 			Type: sqltypes.Int64,
 		},
+		{
+			Name: "increment",
+			Type: sqltypes.Int64,
+		},
+		{
+			Name: "offset",
+			Type: sqltypes.Int64,
+		},
 	}
 )
 
@@ -781,6 +789,8 @@ func (qre *QueryExecutor) execNextval() (*sqltypes.Result, error) {
 		Fields: sequenceFields,
 		Rows: [][]sqltypes.Value{{
 			sqltypes.NewInt64(ret),
+			sqltypes.NewInt64(1), // increment
+			sqltypes.NewInt64(1), // offset
 		}},
 	}, nil
 }
