@@ -664,3 +664,11 @@ func (mysqld *Mysqld) SemiSyncReplicationStatus() (bool, error) {
 	}
 	return false, nil
 }
+
+func (mysqld *Mysqld) SemiSyncExtensionLoaded() bool {
+	qr, err := mysqld.FetchSuperQuery(context.TODO(), "SHOW GLOBAL VARIABLES LIKE 'rpl_semi_sync%'")
+	if err != nil {
+		return false
+	}
+	return len(qr.Rows) >= 1
+}
