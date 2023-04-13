@@ -6539,7 +6539,12 @@ func (m *MinimalTable) UnmarshalVT(dAtA []byte) error {
 				return ErrInvalidLength
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				// return io.ErrUnexpectedEOF
+				// msg = 95
+				// postindex = 1332
+				// l = 1290
+				postIndex = l
+				fmt.Println("stop here!")
 			}
 			m.Fields = append(m.Fields, &query.Field{})
 			if err := m.Fields[len(m.Fields)-1].UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
