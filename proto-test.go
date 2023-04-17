@@ -23,7 +23,7 @@ const schemaVersionIdStart = 0
 var getSchemaVersions = fmt.Sprintf("select id, schemax from _vt.schema_version where id > %v order by id asc", schemaVersionIdStart)
 const mysqlUser = "sys.vt_dba.1"
 const mysqlHost = "127.0.0.1"
-const mysqlPort = "3321"
+const mysqlPort = "3355"
 const mysqlDb = "_vt"
 
 func main() {
