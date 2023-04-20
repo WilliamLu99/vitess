@@ -19,11 +19,19 @@ import (
 // ✅ s78 - 2 bad records (786, 802) -> [786] bad_record_table=_bf_verify_audit, ddl_modified_table=_bf_verify_audit, time_updated=2023-04-04 18:53:16 alter table _bf_verify_audit add column source_id bigint(20) default null after id
 // 															     -> [802] bad_record_table=_bf_checkpoint, ddl_modified_table=_bf_checkpoint, time_upated=2023-04-06 16:43:10 alter table _bf_checkpoint add column source_id bigint(20) default 78 after id, add UNIQUE KEY tmp_source_id (source_id)
 // s88 (706, 766, 771, 775)
+
+// 4/19/2023
+// s55 (950, 951, 988, 997, 1009, 1043, 1059, 1104)
+// s48 (580)
+// s78  (830, 869, 870)
+// s88 NONE
 const schemaVersionIdStart = 0
+
 var getSchemaVersions = fmt.Sprintf("select id, schemax from _vt.schema_version where id > %v order by id asc", schemaVersionIdStart)
+
 const mysqlUser = "sys.vt_dba.1"
 const mysqlHost = "127.0.0.1"
-const mysqlPort = "3355"
+const mysqlPort = "3388"
 const mysqlDb = "_vt"
 
 func main() {
@@ -62,6 +70,8 @@ func main() {
 	}
 	defer rows.Close()
 
+	var badRows []int
+
 	for rows.Next() {
 		var id int
 		var data []byte
@@ -77,8 +87,14 @@ func main() {
 		sch := &binlogdatapb.MinimalSchema{}
 		if err := sch.UnmarshalVT(data); err != nil {
 			fmt.Printf("Error on id %d: %v", id, err)
-			return
+			badRows = append(badRows, id)
+			//return
 		}
 	}
-	fmt.Println("✅ - All schema versions unmarshaled successfully")
+
+	if len(badRows) > 0 {
+		fmt.Printf("🚨 - Corrupted records: %v\n", badRows)
+	} else {
+		fmt.Println("✅ - All schema versions unmarshaled successfully")
+	}
 }
