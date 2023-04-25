@@ -24,7 +24,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -55,6 +54,7 @@ import (
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
 	"vitess.io/vitess/go/vt/vtgate/vschemaacl"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
 
 	binlogdatapb "vitess.io/vitess/go/vt/proto/binlogdata"
 	querypb "vitess.io/vitess/go/vt/proto/query"
@@ -114,6 +114,8 @@ type Executor struct {
 
 	// allowScatter will fail planning if set to false and a plan contains any scatter queries
 	allowScatter bool
+
+	tmc tmclient.TabletManagerClient
 }
 
 var executorOnce sync.Once
@@ -148,6 +150,7 @@ func NewExecutor(
 		schemaTracker:   schemaTracker,
 		allowScatter:    !noScatter,
 		pv:              pv,
+		tmc:             tmclient.NewTabletManagerClient(),
 	}
 
 	vschemaacl.Init()
@@ -861,7 +864,7 @@ func (e *Executor) showVitessReplicationStatus(ctx context.Context, filter *sqlp
 			}
 
 			tabletHostPort := ts.GetTabletHostPort()
-			throttlerStatus, err := getTabletThrottlerStatus(tabletHostPort)
+			throttlerStatus, err := e.getTabletThrottlerStatus(ctx, ts.Tablet)
 			if err != nil {
 				log.Warningf("Could not get throttler status from %s: %v", tabletHostPort, err)
 			}
@@ -1391,39 +1394,19 @@ func (e *Executor) checkThatPlanIsValid(stmt sqlparser.Statement, plan *engine.P
 	return vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "plan includes scatter, which is disallowed using the `no_scatter` command line argument")
 }
 
-func getTabletThrottlerStatus(tabletHostPort string) (string, error) {
-	client := http.Client{
-		Timeout: 100 * time.Millisecond,
-	}
-	resp, err := client.Get(fmt.Sprintf("http://%s/throttler/check?app=vtgate", tabletHostPort))
+func (e *Executor) getTabletThrottlerStatus(ctx context.Context, tablet *topodatapb.Tablet) (string, error) {
+	res, err := e.tmc.ThrottlerCheck(ctx, tablet, "vtgate")
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var elements struct {
-		StatusCode int
-		Value      float64
-		Threshold  float64
-		Message    string
-	}
-	err = json.Unmarshal(body, &elements)
-	if err != nil {
-		return "", err
-	}
-
-	httpStatusStr := http.StatusText(elements.StatusCode)
 
 	load := float64(0)
-	if elements.Threshold > 0 {
-		load = float64((elements.Value / elements.Threshold) * 100)
+	if res.Threshold > 0 {
+		load = float64((res.Value / res.Threshold) * 100)
 	}
 
-	status := fmt.Sprintf("{\"state\":\"%s\",\"load\":%.2f,\"message\":\"%s\"}", httpStatusStr, load, elements.Message)
+	// TODO get the status code from the response
+	status := fmt.Sprintf("{\"state\":\"%s\",\"load\":%.2f,\"message\":\"%s\"}", "200", load, res.Message)
 	return status, nil
 }
 

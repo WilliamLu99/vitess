@@ -36,6 +36,9 @@ service TabletManager {
   // Sleep sleeps for the provided duration
   rpc Sleep(tabletmanagerdata.SleepRequest) returns (tabletmanagerdata.SleepResponse) {};
 
+  // Checks throttler status for the given app
+  rpc ThrottlerCheck(tabletmanagerdata.ThrottlerCheckRequest) returns (tabletmanagerdata.ThrottlerCheckResponse) {};
+
   // ExecuteHook executes the hook remotely
   rpc ExecuteHook(tabletmanagerdata.ExecuteHookRequest) returns (tabletmanagerdata.ExecuteHookResponse) {};
 

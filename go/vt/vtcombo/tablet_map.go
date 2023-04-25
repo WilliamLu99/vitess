@@ -104,6 +104,7 @@ func CreateTablet(
 		MysqlDaemon:         mysqld,
 		DBConfigs:           dbcfgs,
 		QueryServiceControl: controller,
+		ThrottlerService:    controller.LagThrottler(),
 	}
 	tablet := &topodatapb.Tablet{
 		Alias: alias,
@@ -731,6 +732,16 @@ func (itmc *internalTabletManagerClient) LockTables(ctx context.Context, tablet 
 
 func (itmc *internalTabletManagerClient) UnlockTables(ctx context.Context, tablet *topodatapb.Tablet) error {
 	return fmt.Errorf("not implemented in vtcombo")
+}
+
+func (itmc *internalTabletManagerClient) ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet, app string) (*tabletmanagerdatapb.ThrottlerCheckResponse, error) {
+	t, ok := tabletMap[tablet.Alias.Uid]
+	if !ok {
+		return nil, fmt.Errorf("tmclient: cannot find tablet %v", tablet.Alias.Uid)
+	}
+	return t.tm.ThrottlerCheck(ctx, &tabletmanagerdatapb.ThrottlerCheckRequest{
+		App: app,
+	})
 }
 
 func (itmc *internalTabletManagerClient) Ping(ctx context.Context, tablet *topodatapb.Tablet) error {

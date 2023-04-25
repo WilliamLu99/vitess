@@ -17209,6 +17209,212 @@ export namespace tabletmanagerdata {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a ThrottlerCheckRequest. */
+    interface IThrottlerCheckRequest {
+
+        /** ThrottlerCheckRequest app */
+        app?: (string|null);
+    }
+
+    /** Represents a ThrottlerCheckRequest. */
+    class ThrottlerCheckRequest implements IThrottlerCheckRequest {
+
+        /**
+         * Constructs a new ThrottlerCheckRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: tabletmanagerdata.IThrottlerCheckRequest);
+
+        /** ThrottlerCheckRequest app. */
+        public app: string;
+
+        /**
+         * Creates a new ThrottlerCheckRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns ThrottlerCheckRequest instance
+         */
+        public static create(properties?: tabletmanagerdata.IThrottlerCheckRequest): tabletmanagerdata.ThrottlerCheckRequest;
+
+        /**
+         * Encodes the specified ThrottlerCheckRequest message. Does not implicitly {@link tabletmanagerdata.ThrottlerCheckRequest.verify|verify} messages.
+         * @param message ThrottlerCheckRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: tabletmanagerdata.IThrottlerCheckRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified ThrottlerCheckRequest message, length delimited. Does not implicitly {@link tabletmanagerdata.ThrottlerCheckRequest.verify|verify} messages.
+         * @param message ThrottlerCheckRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: tabletmanagerdata.IThrottlerCheckRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a ThrottlerCheckRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns ThrottlerCheckRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): tabletmanagerdata.ThrottlerCheckRequest;
+
+        /**
+         * Decodes a ThrottlerCheckRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns ThrottlerCheckRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): tabletmanagerdata.ThrottlerCheckRequest;
+
+        /**
+         * Verifies a ThrottlerCheckRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a ThrottlerCheckRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns ThrottlerCheckRequest
+         */
+        public static fromObject(object: { [k: string]: any }): tabletmanagerdata.ThrottlerCheckRequest;
+
+        /**
+         * Creates a plain object from a ThrottlerCheckRequest message. Also converts values to other types if specified.
+         * @param message ThrottlerCheckRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: tabletmanagerdata.ThrottlerCheckRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this ThrottlerCheckRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for ThrottlerCheckRequest
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a ThrottlerCheckResponse. */
+    interface IThrottlerCheckResponse {
+
+        /** ThrottlerCheckResponse value */
+        value?: (number|null);
+
+        /** ThrottlerCheckResponse threshold */
+        threshold?: (number|null);
+
+        /** ThrottlerCheckResponse message */
+        message?: (string|null);
+    }
+
+    /** Represents a ThrottlerCheckResponse. */
+    class ThrottlerCheckResponse implements IThrottlerCheckResponse {
+
+        /**
+         * Constructs a new ThrottlerCheckResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: tabletmanagerdata.IThrottlerCheckResponse);
+
+        /** ThrottlerCheckResponse value. */
+        public value: number;
+
+        /** ThrottlerCheckResponse threshold. */
+        public threshold: number;
+
+        /** ThrottlerCheckResponse message. */
+        public message: string;
+
+        /**
+         * Creates a new ThrottlerCheckResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns ThrottlerCheckResponse instance
+         */
+        public static create(properties?: tabletmanagerdata.IThrottlerCheckResponse): tabletmanagerdata.ThrottlerCheckResponse;
+
+        /**
+         * Encodes the specified ThrottlerCheckResponse message. Does not implicitly {@link tabletmanagerdata.ThrottlerCheckResponse.verify|verify} messages.
+         * @param message ThrottlerCheckResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: tabletmanagerdata.IThrottlerCheckResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified ThrottlerCheckResponse message, length delimited. Does not implicitly {@link tabletmanagerdata.ThrottlerCheckResponse.verify|verify} messages.
+         * @param message ThrottlerCheckResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: tabletmanagerdata.IThrottlerCheckResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a ThrottlerCheckResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns ThrottlerCheckResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): tabletmanagerdata.ThrottlerCheckResponse;
+
+        /**
+         * Decodes a ThrottlerCheckResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns ThrottlerCheckResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): tabletmanagerdata.ThrottlerCheckResponse;
+
+        /**
+         * Verifies a ThrottlerCheckResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a ThrottlerCheckResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns ThrottlerCheckResponse
+         */
+        public static fromObject(object: { [k: string]: any }): tabletmanagerdata.ThrottlerCheckResponse;
+
+        /**
+         * Creates a plain object from a ThrottlerCheckResponse message. Also converts values to other types if specified.
+         * @param message ThrottlerCheckResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: tabletmanagerdata.ThrottlerCheckResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this ThrottlerCheckResponse to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for ThrottlerCheckResponse
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of an ExecuteHookRequest. */
     interface IExecuteHookRequest {
 

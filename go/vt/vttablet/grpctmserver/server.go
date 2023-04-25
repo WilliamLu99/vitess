@@ -62,6 +62,17 @@ func (s *server) Sleep(ctx context.Context, request *tabletmanagerdatapb.SleepRe
 	return response, nil
 }
 
+func (s *server) ThrottlerCheck(ctx context.Context, request *tabletmanagerdatapb.ThrottlerCheckRequest) (response *tabletmanagerdatapb.ThrottlerCheckResponse, err error) {
+	defer s.tm.HandleRPCPanic(ctx, "ThrottlerCheck", request, response, true /*verbose*/, &err)
+	ctx = callinfo.GRPCCallInfo(ctx)
+	response = &tabletmanagerdatapb.ThrottlerCheckResponse{}
+	checkResult, err := s.tm.ThrottlerCheck(ctx, request)
+	if err == nil {
+		response = checkResult
+	}
+	return response, err
+}
+
 func (s *server) ExecuteHook(ctx context.Context, request *tabletmanagerdatapb.ExecuteHookRequest) (response *tabletmanagerdatapb.ExecuteHookResponse, err error) {
 	defer s.tm.HandleRPCPanic(ctx, "ExecuteHook", request, response, true /*verbose*/, &err)
 	ctx = callinfo.GRPCCallInfo(ctx)

@@ -27,6 +27,8 @@ type TabletManagerClient interface {
 	Ping(ctx context.Context, in *tabletmanagerdata.PingRequest, opts ...grpc.CallOption) (*tabletmanagerdata.PingResponse, error)
 	// Sleep sleeps for the provided duration
 	Sleep(ctx context.Context, in *tabletmanagerdata.SleepRequest, opts ...grpc.CallOption) (*tabletmanagerdata.SleepResponse, error)
+	// Checks throttler status for the given app
+	ThrottlerCheck(ctx context.Context, in *tabletmanagerdata.ThrottlerCheckRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ThrottlerCheckResponse, error)
 	// ExecuteHook executes the hook remotely
 	ExecuteHook(ctx context.Context, in *tabletmanagerdata.ExecuteHookRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ExecuteHookResponse, error)
 	// GetSchema asks the tablet for its schema
@@ -127,6 +129,15 @@ func (c *tabletManagerClient) Ping(ctx context.Context, in *tabletmanagerdata.Pi
 func (c *tabletManagerClient) Sleep(ctx context.Context, in *tabletmanagerdata.SleepRequest, opts ...grpc.CallOption) (*tabletmanagerdata.SleepResponse, error) {
 	out := new(tabletmanagerdata.SleepResponse)
 	err := c.cc.Invoke(ctx, "/tabletmanagerservice.TabletManager/Sleep", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tabletManagerClient) ThrottlerCheck(ctx context.Context, in *tabletmanagerdata.ThrottlerCheckRequest, opts ...grpc.CallOption) (*tabletmanagerdata.ThrottlerCheckResponse, error) {
+	out := new(tabletmanagerdata.ThrottlerCheckResponse)
+	err := c.cc.Invoke(ctx, "/tabletmanagerservice.TabletManager/ThrottlerCheck", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -592,6 +603,8 @@ type TabletManagerServer interface {
 	Ping(context.Context, *tabletmanagerdata.PingRequest) (*tabletmanagerdata.PingResponse, error)
 	// Sleep sleeps for the provided duration
 	Sleep(context.Context, *tabletmanagerdata.SleepRequest) (*tabletmanagerdata.SleepResponse, error)
+	// Checks throttler status for the given app
+	ThrottlerCheck(context.Context, *tabletmanagerdata.ThrottlerCheckRequest) (*tabletmanagerdata.ThrottlerCheckResponse, error)
 	// ExecuteHook executes the hook remotely
 	ExecuteHook(context.Context, *tabletmanagerdata.ExecuteHookRequest) (*tabletmanagerdata.ExecuteHookResponse, error)
 	// GetSchema asks the tablet for its schema
@@ -682,6 +695,9 @@ func (UnimplementedTabletManagerServer) Ping(context.Context, *tabletmanagerdata
 }
 func (UnimplementedTabletManagerServer) Sleep(context.Context, *tabletmanagerdata.SleepRequest) (*tabletmanagerdata.SleepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Sleep not implemented")
+}
+func (UnimplementedTabletManagerServer) ThrottlerCheck(context.Context, *tabletmanagerdata.ThrottlerCheckRequest) (*tabletmanagerdata.ThrottlerCheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ThrottlerCheck not implemented")
 }
 func (UnimplementedTabletManagerServer) ExecuteHook(context.Context, *tabletmanagerdata.ExecuteHookRequest) (*tabletmanagerdata.ExecuteHookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExecuteHook not implemented")
@@ -863,6 +879,24 @@ func _TabletManager_Sleep_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TabletManagerServer).Sleep(ctx, req.(*tabletmanagerdata.SleepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TabletManager_ThrottlerCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(tabletmanagerdata.ThrottlerCheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TabletManagerServer).ThrottlerCheck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/tabletmanagerservice.TabletManager/ThrottlerCheck",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TabletManagerServer).ThrottlerCheck(ctx, req.(*tabletmanagerdata.ThrottlerCheckRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1697,6 +1731,10 @@ var TabletManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Sleep",
 			Handler:    _TabletManager_Sleep_Handler,
+		},
+		{
+			MethodName: "ThrottlerCheck",
+			Handler:    _TabletManager_ThrottlerCheck_Handler,
 		},
 		{
 			MethodName: "ExecuteHook",

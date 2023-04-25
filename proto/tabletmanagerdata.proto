@@ -120,6 +120,16 @@ message SleepRequest {
 message SleepResponse {
 }
 
+message ThrottlerCheckRequest{
+  string app = 1;
+}
+
+message ThrottlerCheckResponse{
+  float value = 1;
+  float threshold = 2;
+  string message = 3;
+}
+
 message ExecuteHookRequest {
   string name = 1;
   repeated string parameters = 2;

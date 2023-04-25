@@ -75,6 +75,8 @@ type TabletManagerClient interface {
 	// GetPermissions asks the remote tablet for its permissions list
 	GetPermissions(ctx context.Context, tablet *topodatapb.Tablet) (*tabletmanagerdatapb.Permissions, error)
 
+	ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet, app string) (*tabletmanagerdatapb.ThrottlerCheckResponse, error)
+
 	//
 	// Various read-write methods
 	//

@@ -16,6 +16,7 @@ type Probe struct {
 	MetricQuery     string
 	TabletHost      string
 	TabletPort      int
+	TabletGRPCPort  int
 	CacheMillis     int
 	QueryInProgress int64
 }

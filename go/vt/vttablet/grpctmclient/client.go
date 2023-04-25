@@ -73,6 +73,7 @@ var _binaries = []string{ // binaries that require the flags in this package
 	"vtorc",
 	"vttablet",
 	"vttestserver",
+	"vtgate",
 }
 
 func init() {
@@ -236,6 +237,17 @@ func (client *Client) Sleep(ctx context.Context, tablet *topodatapb.Tablet, dura
 		Duration: int64(duration),
 	})
 	return err
+}
+
+func (client *Client) ThrottlerCheck(ctx context.Context, tablet *topodatapb.Tablet, app string) (*tabletmanagerdatapb.ThrottlerCheckResponse, error) {
+	c, closer, err := client.dialer.dial(ctx, tablet)
+	if err != nil {
+		return nil, err
+	}
+	defer closer.Close()
+	return c.ThrottlerCheck(ctx, &tabletmanagerdatapb.ThrottlerCheckRequest{
+		App: app,
+	})
 }
 
 // ExecuteHook is part of the tmclient.TabletManagerClient interface.

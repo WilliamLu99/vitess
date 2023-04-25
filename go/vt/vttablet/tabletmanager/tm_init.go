@@ -70,6 +70,7 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tabletmanager/vdiff"
 	"vitess.io/vitess/go/vt/vttablet/tabletmanager/vreplication"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/throttle"
 )
 
 // Query rules from denylist
@@ -150,6 +151,7 @@ type TabletManager struct {
 	UpdateStream        binlog.UpdateStreamControl
 	VREngine            *vreplication.Engine
 	VDiffEngine         *vdiff.Engine
+	ThrottlerService    *throttle.Throttler
 
 	// tmState manages the TabletManager state.
 	tmState *tmState

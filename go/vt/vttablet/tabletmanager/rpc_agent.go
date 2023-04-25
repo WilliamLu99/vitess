@@ -39,6 +39,8 @@ type RPCTM interface {
 
 	Ping(ctx context.Context, args string) string
 
+	ThrottlerCheck(ctx context.Context, request *tabletmanagerdatapb.ThrottlerCheckRequest) (*tabletmanagerdatapb.ThrottlerCheckResponse, error)
+
 	GetSchema(ctx context.Context, request *tabletmanagerdatapb.GetSchemaRequest) (*tabletmanagerdatapb.SchemaDefinition, error)
 
 	GetPermissions(ctx context.Context) (*tabletmanagerdatapb.Permissions, error)
