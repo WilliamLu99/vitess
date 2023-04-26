@@ -778,12 +778,18 @@ func (vs *vstreamer) buildTableColumns(tm *mysql.TableMap) ([]*querypb.Field, er
 	}
 
 	// Columns should be truncated to match those in tm.
-	fields = st.Fields[:len(tm.Types)]
+	var copiedFields []*querypb.Field
+	copiedFields = append(copiedFields, st.Fields[:len(tm.Types)]...)
+	for i, field := range copiedFields {
+		dup := *field
+		copiedFields[i] = &dup
+	}
+
 	extColInfos, err := vs.getExtColInfos(tm.Name, tm.Database)
 	if err != nil {
 		return nil, err
 	}
-	for _, field := range fields {
+	for _, field := range copiedFields {
 		// we want the MySQL column type info so that we can properly handle
 		// ambiguous binlog events and other cases where the internal types
 		// don't match the MySQL column type. One example being that in binlog
@@ -793,7 +799,7 @@ func (vs *vstreamer) buildTableColumns(tm *mysql.TableMap) ([]*querypb.Field, er
 			field.ColumnType = extColInfo.columnType
 		}
 	}
-	return fields, nil
+	return copiedFields, nil
 }
 
 // additional column attributes from information_schema.columns. Currently only column_type is used, but
