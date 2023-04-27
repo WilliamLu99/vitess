@@ -23,6 +23,8 @@ import (
 	"io"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"google.golang.org/protobuf/encoding/prototext"
 
 	"vitess.io/vitess/go/mysql"
@@ -775,7 +777,12 @@ func (vs *vstreamer) buildTableColumns(tm *mysql.TableMap) ([]*querypb.Field, er
 	}
 
 	// Columns should be truncated to match those in tm.
-	fields = st.Fields[:len(tm.Types)]
+	fields = make([]*querypb.Field, len(tm.Types))
+	// Make a deep copy of the fields as they are pointers and
+	// may be changed during the life of the stream.
+	for i := 0; i < len(fields); i++ {
+		fields[i] = proto.Clone(st.Fields[i]).(*querypb.Field)
+	}
 	extColInfos, err := vs.getExtColInfos(tm.Name, tm.Database)
 	if err != nil {
 		return nil, err
