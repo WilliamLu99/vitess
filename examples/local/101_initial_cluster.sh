@@ -64,12 +64,32 @@ wait_for_healthy_shard commerce 0 || exit 1
 # create the schema
 vtctldclient ApplySchema --sql-file create_commerce_schema.sql commerce || fail "Failed to apply schema for the commerce keyspace"
 
+for i in {1..500}; do
+  create_table_sql="CREATE TABLE foo${i} (
+    id bigint not null auto_increment,
+    str1 varchar(255),
+    str2 varchar(255),
+    str3 varchar(255),
+    str4 varchar(255),
+    str5 varchar(255),
+    str6 varchar(255),
+    str7 varchar(255),
+    str8 varchar(255),
+    str9 varchar(255),
+    str10 varchar(255),
+    primary key(id)
+  )"
+  echo "Creating dummy table foo${i}"
+  vtctldclient ApplySchema --sql "$create_table_sql" commerce || fail "Failed to create dummy tables for the commerce keyspace"
+done
+
 # create the vschema
 vtctldclient ApplyVSchema --vschema-file vschema_commerce_initial.json commerce || fail "Failed to apply vschema for the commerce keyspace"
 
 # start vtgate
 CELL=zone1 ../common/scripts/vtgate-up.sh
 
+SKIP_VTADMIN=true
 # start vtadmin
 if [[ -n ${SKIP_VTADMIN} ]]; then
 	echo -e "\nSkipping VTAdmin! If this is not what you want then please unset the SKIP_VTADMIN env variable in your shell."
@@ -77,3 +97,5 @@ else
 	../common/scripts/vtadmin-up.sh
 fi
 
+primary_uid=$(vtctldclient GetShard commerce/0 | jq '.shard.primary_alias.uid')
+echo -e "\nPrimary tablet logs: ${VTDATAROOT}/vt_0000000${primary_uid}/vttablet.out"

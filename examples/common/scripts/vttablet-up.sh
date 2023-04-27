@@ -38,6 +38,9 @@ echo "Starting vttablet for $alias..."
 # shellcheck disable=SC2086
 vttablet \
  $TOPOLOGY_FLAGS \
+ --watch_replication_stream=true \
+ --track_schema_versions=true \
+ --alsologtostderr \
  --log_dir $VTDATAROOT/tmp \
  --log_queries_to_file $VTDATAROOT/tmp/$tablet_logfile \
  --tablet-path $alias \

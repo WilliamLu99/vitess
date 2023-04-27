@@ -38,7 +38,7 @@ import (
 */
 func main() {
 	ctx := context.Background()
-	streamCustomer := true
+	streamCustomer := false
 	var vgtid *binlogdatapb.VGtid
 	if streamCustomer {
 		vgtid = &binlogdatapb.VGtid{
@@ -58,7 +58,7 @@ func main() {
 			ShardGtids: []*binlogdatapb.ShardGtid{{
 				Keyspace: "commerce",
 				Shard:    "0",
-				Gtid:     "",
+				Gtid:     "current",
 			}}}
 	}
 	filter := &binlogdatapb.Filter{
@@ -82,7 +82,7 @@ func main() {
 		switch err {
 		case nil:
 			_ = e
-			fmt.Printf("%v\n", e)
+			//fmt.Printf("%v\n", e)
 		case io.EOF:
 			fmt.Printf("stream ended\n")
 			return
