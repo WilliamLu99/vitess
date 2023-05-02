@@ -196,6 +196,12 @@ func (n *node) recurseContents(callback func(n *node)) {
 	}
 }
 
+func (n *node) updateContent(contents []byte, version uint64) {
+	// TODO persist to disk
+	n.version = version
+	n.contents = contents
+}
+
 func (n *node) propagateRecursiveWatch(ev *topo.WatchDataRecursive) {
 	for parent := n.parent; parent != nil; parent = parent.parent {
 		for _, w := range parent.watches {
@@ -259,6 +265,7 @@ func (f *Factory) getNextVersion() uint64 {
 }
 
 func (f *Factory) newFile(name string, contents []byte, parent *node) *node {
+	// TODO persist to disk
 	return &node{
 		name:     name,
 		version:  f.getNextVersion(),
@@ -269,6 +276,7 @@ func (f *Factory) newFile(name string, contents []byte, parent *node) *node {
 }
 
 func (f *Factory) newDirectory(name string, parent *node) *node {
+	// TODO persist to disk
 	return &node{
 		name:     name,
 		version:  f.getNextVersion(),
@@ -337,6 +345,7 @@ func (f *Factory) recursiveDelete(n *node) {
 	if parent == nil {
 		return
 	}
+	// TODO persist to disk
 	delete(parent.children, n.name)
 	if len(parent.children) == 0 {
 		f.recursiveDelete(parent)

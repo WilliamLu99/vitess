@@ -126,8 +126,7 @@ func (c *Conn) Update(ctx context.Context, filePath string, contents []byte, ver
 	}
 
 	// Now we can update.
-	n.version = c.factory.getNextVersion()
-	n.contents = contents
+	n.updateContent(contents, c.factory.getNextVersion())
 
 	// Call the watches
 	for _, w := range n.watches {
