@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -770,13 +771,21 @@ func (mysqld *Mysqld) SemiSyncReplicationStatus() (bool, error) {
 
 // SemiSyncExtensionLoaded returns whether semi-sync plugins are loaded.
 func (mysqld *Mysqld) SemiSyncExtensionLoaded() (bool, error) {
+
+	var b = make([]byte, 2048)
+	runtime.Stack(b, false)
+	log.Infof("Checking SemiSyncExtensionLoaded %s", b)
+
 	qr, err := mysqld.FetchSuperQuery(context.Background(), "SELECT COUNT(*) > 0 AS plugin_loaded FROM information_schema.plugins WHERE plugin_name LIKE 'rpl_semi_sync%'")
 	if err != nil {
-		return false, err
+		panic(err)
+		//return false, err
 	}
 	pluginPresent, err := qr.Rows[0][0].ToBool()
 	if err != nil {
-		return false, err
+		panic(err)
+		//return false, err
 	}
+	log.Infof("SemiSyncExtensionLoaded pluginPresent: %v", pluginPresent)
 	return pluginPresent, nil
 }

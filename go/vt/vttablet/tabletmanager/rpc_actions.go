@@ -17,8 +17,8 @@ limitations under the License.
 package tabletmanager
 
 import (
-	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	"vitess.io/vitess/go/vt/vterrors"
@@ -26,6 +26,7 @@ import (
 	"context"
 
 	"vitess.io/vitess/go/vt/hook"
+	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/mysqlctl"
 	"vitess.io/vitess/go/vt/topotools"
 
@@ -86,7 +87,9 @@ func (tm *TabletManager) ChangeType(ctx context.Context, tabletType topodatapb.T
 
 	semiSyncAction, err := tm.convertBoolToSemiSyncAction(semiSync)
 	if err != nil {
-		return err
+		log.Info("Inside ChangeType, about to panic")
+		panic(err)
+		//return err
 	}
 
 	return tm.changeTypeLocked(ctx, tabletType, DBActionNone, semiSyncAction)
@@ -150,21 +153,34 @@ func (tm *TabletManager) RunHealthCheck(ctx context.Context) {
 }
 
 func (tm *TabletManager) convertBoolToSemiSyncAction(semiSync bool) (SemiSyncAction, error) {
+
+	var b = make([]byte, 2048)
+	size := runtime.Stack(b, false)
+
+	b = b[0:size]
+	log.Infof("Checking convertBoolToSemiSyncAction: %s", b)
+
 	semiSyncExtensionLoaded, err := tm.MysqlDaemon.SemiSyncExtensionLoaded()
 	if err != nil {
-		return SemiSyncActionNone, err
+		panic(err)
+		//return SemiSyncActionNone, err
 	}
 
 	if semiSyncExtensionLoaded {
 		if semiSync {
+			log.Infof("convertBool func (semiSync: true, extensionLoaded: true): SemiSyncActionSet")
 			return SemiSyncActionSet, nil
 		} else {
+			log.Infof("convertBool func (semiSync: false, extensionLoaded true): SemiSyncActionUnset")
 			return SemiSyncActionUnset, nil
 		}
 	} else {
 		if semiSync {
-			return SemiSyncActionNone, errors.New("semi-sync plugins are not loaded.")
+			log.Infof("convertBool func (semiSync true, extensionLoaded false): PANIC PANIC")
+			panic(err)
+			//return SemiSyncActionNone, errors.New("semi-sync plugins are not loaded.")
 		} else {
+			log.Infof("convertBool func (semiSync false, extensionLoaded false): SemiSyncActionNone")
 			return SemiSyncActionNone, nil
 		}
 	}
