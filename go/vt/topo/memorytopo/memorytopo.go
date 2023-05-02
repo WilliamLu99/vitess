@@ -75,6 +75,9 @@ type Factory struct {
 	// err is used for testing purposes to force queries / watches
 	// to return the given error
 	err error
+
+	// memory-map the topo data into this file, if set.
+	mmapFile string
 }
 
 // HasGlobalReadOnlyCell is part of the topo.Factory interface.
@@ -250,6 +253,12 @@ func NewServerAndFactory(cells ...string) (*topo.Server, *Factory) {
 // NewServer returns the new server
 func NewServer(cells ...string) *topo.Server {
 	server, _ := NewServerAndFactory(cells...)
+	return server
+}
+
+func NewMmapServer(file string, cells ...string) *topo.Server {
+	server, factory := NewServerAndFactory(cells...)
+	factory.mmapFile = file
 	return server
 }
 
