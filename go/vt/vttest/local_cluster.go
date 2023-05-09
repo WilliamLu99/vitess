@@ -143,6 +143,8 @@ type Config struct {
 	ExternalTopoGlobalServerAddress string
 
 	ExternalTopoGlobalRoot string
+
+	TopoPersistence string
 }
 
 // InitSchemas is a shortcut for tests that just want to setup a single

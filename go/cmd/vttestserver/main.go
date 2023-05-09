@@ -96,6 +96,9 @@ func registerFlags(fs *pflag.FlagSet) {
 			" migrations are run every time the cluster starts, since persistence"+
 			" for the topology server has not been implemented yet")
 
+	fs.StringVar(&config.TopoPersistence, "topo_persistence", "",
+		"If this flag is set, the topology server will be persisted to the given directory")
+
 	fs.BoolVar(&doSeed, "initialize_with_random_data", false,
 		"If this flag is each table-shard will be initialized"+
 			" with random data. See also the 'rng_seed' and 'min_shard_size'"+

@@ -23,7 +23,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -51,6 +54,7 @@ import (
 	"vitess.io/vitess/go/vt/wrangler"
 
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
+	vschemapb "vitess.io/vitess/go/vt/proto/vschema"
 	vttestpb "vitess.io/vitess/go/vt/proto/vttest"
 )
 
@@ -61,7 +65,8 @@ var (
 	mysqlPort          = flags.Int("mysql_port", 3306, "mysql port")
 	externalTopoServer = flags.Bool("external_topo_server", false, "Should vtcombo use an external topology server instead of starting its own in-memory topology server. "+
 		"If true, vtcombo will use the flags defined in topo/server.go to open topo server")
-	plannerName = flags.String("planner-version", "", "Sets the default planner to use when the session has not changed it. Valid values are: V3, Gen4, Gen4Greedy and Gen4Fallback. Gen4Fallback tries the gen4 planner and falls back to the V3 planner if the gen4 fails.")
+	topoPersistence = flags.String("topo_persistence", "", "If set, the topology will be persisted in the given directory. ")
+	plannerName     = flags.String("planner-version", "", "Sets the default planner to use when the session has not changed it. Valid values are: V3, Gen4, Gen4Greedy and Gen4Fallback. Gen4Fallback tries the gen4 planner and falls back to the V3 planner if the gen4 fails.")
 
 	tpb             vttestpb.VTTestTopology
 	ts              *topo.Server
@@ -293,6 +298,55 @@ func main() {
 		exit.Return(1)
 	}
 
+	if *topoPersistence != "" {
+		// If there are keyspace files, load them.
+		for _, ks := range tpb.Keyspaces {
+			ksFile := path.Join(*topoPersistence, ks.Name+".json")
+			if _, err := os.Stat(ksFile); err == nil {
+				// Read the JSON data from the file.
+				jsonData, err := ioutil.ReadFile(ksFile)
+				if err != nil {
+					log.Fatalf("Unable to read keyspace file %v: %v", ksFile, err)
+				}
+
+				keyspace := &vschemapb.Keyspace{}
+				err = json.Unmarshal(jsonData, keyspace)
+				if err != nil {
+					log.Fatalf("Unable to parse keyspace file %v: %v", ksFile, err)
+				}
+
+				ts.SaveVSchema(context.Background(), ks.Name, keyspace)
+				log.Infof("Loaded keyspace %v from %v\n", ks.Name, ksFile)
+			}
+		}
+
+		// Rebuild the SrvVSchema object in case we loaded vschema from file
+		if err := ts.RebuildSrvVSchema(context.Background(), tpb.Cells); err != nil {
+			log.Fatalf("RebuildSrvVSchema failed: %v", err)
+		}
+
+		// Watch for changes in the SrvVSchema object and persist them to disk.
+		go func() {
+			data, ch, err := ts.WatchSrvVSchema(context.Background(), tpb.Cells[0])
+			if err != nil {
+				log.Fatalf("WatchSrvVSchema failed: %v", err)
+			}
+
+			if data.Err != nil {
+				log.Fatalf("WatchSrvVSchema could not retrieve initial vschema: %v", data.Err)
+			}
+			persistNewSrvVSchema(data.Value)
+
+			for update := range ch {
+				if update.Err != nil {
+					log.Errorf("WatchSrvVSchema returned an error: %v", update.Err)
+				} else {
+					persistNewSrvVSchema(update.Value)
+				}
+			}
+		}()
+	}
+
 	servenv.OnRun(func() {
 		addStatusParts(vtg)
 	})
@@ -307,6 +361,22 @@ func main() {
 		ts.Close()
 	})
 	servenv.RunDefault()
+}
+
+func persistNewSrvVSchema(srvVSchema *vschemapb.SrvVSchema) {
+	for ksName, ks := range srvVSchema.Keyspaces {
+		jsonBytes, err := json.MarshalIndent(ks, "", "  ")
+		if err != nil {
+			log.Errorf("Error marshaling keyspace: %v", err)
+			continue
+		}
+
+		err = ioutil.WriteFile(path.Join(*topoPersistence, ksName+".json"), jsonBytes, 0644)
+		if err != nil {
+			log.Errorf("Error writing keyspace file: %v", err)
+		}
+		log.Infof("Persisted keyspace %v to %v", ksName, *topoPersistence)
+	}
 }
 
 // vtcomboMysqld is a wrapper on top of mysqlctl.Mysqld.
