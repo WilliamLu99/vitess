@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/vterrors"
 
 	"context"
@@ -82,6 +83,9 @@ func (tm *TabletManager) ChangeType(ctx context.Context, tabletType topodatapb.T
 		return err
 	}
 	defer tm.unlock()
+
+	log.Infof("Inside ChangeType, semiSyncAction: %s", convertBoolToSemiSyncAction(semiSync))
+
 	return tm.changeTypeLocked(ctx, tabletType, DBActionNone, convertBoolToSemiSyncAction(semiSync))
 }
 

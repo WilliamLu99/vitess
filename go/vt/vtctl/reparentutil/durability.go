@@ -108,8 +108,10 @@ func SemiSyncAckers(durability Durabler, tablet *topodatapb.Tablet) int {
 func IsReplicaSemiSync(durability Durabler, primary, replica *topodatapb.Tablet) bool {
 	// Prevent panics.
 	if primary == nil || primary.Alias == nil || replica == nil || replica.Alias == nil {
+		log.Error("REPLICA SEMI SYNC SOMEBODY IS NIL: primary: %t, primary.Alias: %t, replica: %t, primary.Replica: %t", primary == nil, primary.Alias == nil, replica == nil, replica.Alias == nil)
 		return false
 	}
+	log.Infof("Inside IsReplicaSemiSync: durability: %s, primary alias: %s replica alias: %s replica nil?: %t", durability, primary.Alias, replica.Alias, replica == nil)
 	return durability.isReplicaSemiSync(primary, replica)
 }
 
@@ -159,6 +161,7 @@ func (d *durabilitySemiSync) semiSyncAckers(tablet *topodatapb.Tablet) int {
 
 // isReplicaSemiSync implements the Durabler interface
 func (d *durabilitySemiSync) isReplicaSemiSync(primary, replica *topodatapb.Tablet) bool {
+	log.Infof("Inside isReplicaSemiSync: replica type: %s", replica.Type)
 	switch replica.Type {
 	case topodatapb.TabletType_PRIMARY, topodatapb.TabletType_REPLICA:
 		return true
